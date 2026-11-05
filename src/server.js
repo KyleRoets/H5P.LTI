@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { config } from './config.js';
+import { config, internalUrl } from './config.js';
 import { cleanupExpired } from './db.js';
 import { loadKeys } from './keys.js';
 import { ltiRouter } from './lti.js';
@@ -23,6 +23,14 @@ export async function createApp() {
   });
   app.use(express.static(path.join(root, 'public'), { maxAge: '1h' }));
   app.use('/media', mediaStatic());
+  if (config.demo) {
+    // Pretend ReachLMS on the same address, so the whole flow can be tested from one URL.
+    const { createMockPlatform } = await import('./demo/mock-platform.js');
+    const demo = await createMockPlatform({ base: `${config.publicUrl}/demo`, toolUrl: config.publicUrl, resolve: internalUrl });
+    app.use('/demo', demo.app);
+    app.get('/', (req, res) => res.redirect('/demo/'));
+    console.log(`DEMO MODE: pretend ReachLMS at ${config.publicUrl}/demo/ — do not use this instance with your real ReachLMS.`);
+  }
   app.use(ltiRouter);
   app.use(apiRouter);
   app.get('/health', (req, res) => res.json({ ok: true }));

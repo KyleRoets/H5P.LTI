@@ -11,6 +11,8 @@ Teachers click the **Reach Studio** button in the ReachLMS Rich Content Editor (
 
 Students see the content embedded inline. Scored content can also be added as a **graded assignment**, and scores go to the ReachLMS gradebook automatically.
 
+> **Quickest test, nothing to install:** [open it in GitHub Codespaces](https://codespaces.new/KyleRoets/H5P.LTI?ref=reach-studio-lti-tool). It starts in demo mode with a pretend ReachLMS course in a new tab.
+>
 > **New here?** Follow the step-by-step [setup and testing guide](docs/SETUP-GUIDE.md): try it locally, host it on Render, install it into ReachLMS, then test it in a course.
 
 ## Content types
@@ -100,7 +102,11 @@ Dynamic Registration reads ReachLMS's own issuer and endpoints, so it works whet
    - **Issuer:** on a self-hosted (open-source) Canvas, this is the `lti_iss` value in ReachLMS's `config/security.yml`. On Instructure-hosted Canvas it is `https://canvas.instructure.com`, and the endpoints live on `https://sso.canvaslms.com` (pass `--auth`, `--token` and `--jwks` explicitly).
 3. Deploy the tool by Client ID, as in step 2a.
 
-## Local demo (no ReachLMS needed)
+## Demo mode (no ReachLMS needed)
+
+`npm run demo` (or `DEMO_MODE=true`) serves a pretend ReachLMS at `/demo` on the same address as the tool, so the whole flow can be tested from one URL. This works locally, in GitHub Codespaces (configured in `.devcontainer/`), or on a free Render service. The public address is detected automatically on Render and Codespaces. **Never use demo mode on the instance your real ReachLMS talks to.**
+
+## Local demo with a separate mock (two processes)
 
 `test/mock-canvas.js` is a small mock ReachLMS. It provides a course page with a Rich Content Editor button, Dynamic Registration, deep link return, a token endpoint and a gradebook.
 

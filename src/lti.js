@@ -8,7 +8,7 @@
 import express from 'express';
 import { SignJWT, jwtVerify, createRemoteJWKSet } from 'jose';
 import { db, newId } from './db.js';
-import { config } from './config.js';
+import { config, internalUrl } from './config.js';
 import { signingKey, publicJwks } from './keys.js';
 import { createSession } from './sessions.js';
 import { views } from './views.js';
@@ -57,7 +57,7 @@ export function upsertPlatform(p) {
 
 const jwksCache = new Map();
 function platformJwks(platform) {
-  if (!jwksCache.has(platform.jwks_url)) jwksCache.set(platform.jwks_url, createRemoteJWKSet(new URL(platform.jwks_url)));
+  if (!jwksCache.has(platform.jwks_url)) jwksCache.set(platform.jwks_url, createRemoteJWKSet(new URL(internalUrl(platform.jwks_url))));
   return jwksCache.get(platform.jwks_url);
 }
 
@@ -168,7 +168,7 @@ export async function getAccessToken(platform, scopes) {
     .setIssuer(platform.client_id).setSubject(platform.client_id)
     .setAudience(platform.token_url).setIssuedAt().setExpirationTime('5m').setJti(newId())
     .sign(k.privateKey);
-  const res = await fetch(platform.token_url, {
+  const res = await fetch(internalUrl(platform.token_url), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
     body: new URLSearchParams({
@@ -188,7 +188,7 @@ export async function postScore(platform, lineitem, sub, scoreGiven, scoreMaximu
   const token = await getAccessToken(platform, ['https://purl.imsglobal.org/spec/lti-ags/scope/score']);
   const u = new URL(lineitem);
   u.pathname = u.pathname.replace(/\/$/, '') + '/scores';
-  const res = await fetch(u, {
+  const res = await fetch(internalUrl(u), {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/vnd.ims.lis.v1.score+json' },
     body: JSON.stringify({
@@ -379,13 +379,13 @@ ltiRouter.post('/lti/register', async (req, res) => {
     if (ocUrl.protocol !== 'https:' && !config.allowInsecure) throw new Error('openid_configuration must use https.');
     const headers = { Accept: 'application/json' };
     if (rt) headers.Authorization = `Bearer ${rt}`;
-    const cfgRes = await fetch(ocUrl, { headers });
+    const cfgRes = await fetch(internalUrl(ocUrl), { headers });
     if (!cfgRes.ok) throw new Error(`Could not read the platform configuration (${cfgRes.status}).`);
     const pc = await cfgRes.json();
     for (const k of ['issuer', 'authorization_endpoint', 'token_endpoint', 'jwks_uri', 'registration_endpoint']) {
       if (!pc[k]) throw new Error(`Platform configuration is missing ${k}.`);
     }
-    const regRes = await fetch(pc.registration_endpoint, {
+    const regRes = await fetch(internalUrl(pc.registration_endpoint), {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(registrationPayload()),

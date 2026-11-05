@@ -13,7 +13,7 @@
     "add-platform": "node --disable-warning=ExperimentalWarning scripts/add-platform.js",
     "test": "node --disable-warning=ExperimentalWarning test/e2e-lti.test.js",
     "mock-canvas": "node test/mock-canvas.js",
-    "demo": "ALLOW_INSECURE_PLATFORMS=true node --disable-warning=ExperimentalWarning src/server.js & node test/mock-canvas.js"
+    "demo": "DEMO_MODE=true node --disable-warning=ExperimentalWarning src/server.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

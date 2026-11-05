@@ -1,6 +1,7 @@
 # Render Blueprint: New → Blueprint → pick this repository.
 # Creates the Reach Studio web service with a persistent disk for the database,
-# uploads and the tool's signing key.
+# uploads and the tool's signing key. The public address is detected automatically
+# (RENDER_EXTERNAL_URL); add PUBLIC_URL only if you use a custom domain.
 services:
   - type: web
     name: reach-studio
@@ -12,8 +13,6 @@ services:
       mountPath: /data
       sizeGB: 1
     envVars:
-      - key: PUBLIC_URL      # your service address, e.g. https://reach-studio.onrender.com
-        sync: false
       - key: TRUST_PROXY
         value: "true"
       - key: DATA_DIR

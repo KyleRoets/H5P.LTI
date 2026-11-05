@@ -4,7 +4,8 @@ This guide takes you from "the code is on GitHub" to "teachers are using it in R
 
 | Part | What you do | Time | You need |
 |---|---|---|---|
-| 1 | Try it on your own computer with a pretend ReachLMS | 20 min | A computer you can install software on |
+| **0** | **Quickest: try it in your browser, nothing to install** | **5 min** | **A GitHub login** |
+| 1 | *(Optional)* Try it on your own computer instead | 20 min | A computer you can install software on |
 | 2 | Put it on the internet (Render) | 30 min | A Render account and a payment card (about $7–8/month) |
 | 3 | Install it into ReachLMS | 15 min | A ReachLMS **admin** login |
 | 4 | Test it in a real ReachLMS course | 20 min | A test or sandbox course |
@@ -14,7 +15,27 @@ Troubleshooting is at the end.
 
 ---
 
-## Part 1: Try it on your own computer
+## Part 0: Try it in your browser (quickest, nothing to install)
+
+GitHub can run Reach Studio for you in the cloud (**GitHub Codespaces**). It's free for personal accounts: 60 hours a month. It starts in **demo mode**, so one web address gives you both Reach Studio and a pretend ReachLMS course to test it in.
+
+1. Open **<https://codespaces.new/KyleRoets/H5P.LTI?ref=reach-studio-lti-tool>**. Once the pull request is merged you can use `?ref=main`, or the **Code → Codespaces** tab on the repository page.
+2. Sign in to GitHub if asked and click **Create codespace**.
+3. Wait 2–4 minutes while it sets up. An online editor opens and a terminal at the bottom runs `npm install`, then `npm run demo`.
+4. When the terminal shows **Reach Studio listening on 3000**, a new browser tab opens with the pretend ReachLMS course.
+   - **No tab opened?** Click the **Ports** tab next to the terminal, then the 🌐 globe icon next to port **3000**.
+   - **Pop-up blocked?** Allow pop-ups for `github.dev`.
+5. Follow the click-through checklist in **step 1.5** below, from step 1 ("Install Reach Studio").
+
+**When you're done:** go to <https://github.com/codespaces>, then **⋯ → Stop codespace** (or Delete), so it doesn't use up your free hours. Everything you made in the demo is test data only.
+
+> **Demo mode is for testing only.** Never point your real ReachLMS at an instance running in demo mode: anyone who opens `/demo` could act as the pretend ReachLMS.
+
+If Part 0 worked, you can skip Part 1 and go straight to Part 2.
+
+---
+
+## Part 1: Try it on your own computer (optional)
 
 This uses a **pretend ReachLMS** that comes with the code, so you can see the whole flow without touching your real system.
 
@@ -96,7 +117,7 @@ Wait for `Mock ReachLMS running at http://localhost:4000`. Leave it open too.
 
 ### 1.5 Click through it
 
-Open your web browser at **http://localhost:4000**. Each step says what you should see.
+Open your web browser at **http://localhost:4000** (in Codespaces, the tab that opened for you). Each step says what you should see.
 
 | # | Do this | You should see |
 |---|---|---|
@@ -131,16 +152,17 @@ ReachLMS has to reach the tool over the internet on **https**. Netlify can't run
 2. Go to <https://render.com> and sign up. Choosing **Sign in with GitHub** is easiest.
 3. Click **New + → Blueprint**.
 4. Connect GitHub if asked, choose the **KyleRoets/H5P.LTI** repository, then pick the branch.
-5. Render reads `render.yaml` and shows a service called **reach-studio** with a 1 GB disk. It asks for one value:
-   - **PUBLIC_URL**: type `https://reach-studio.onrender.com`. If Render tells you that name is taken, use the address it shows on the service page once created, and update this value after (see 2.2).
+5. Render reads `render.yaml` and shows a service called **reach-studio** with a 1 GB disk. There's nothing to type: the tool works out its own address.
 6. Click **Apply**. Render builds and starts the tool, which takes 3–6 minutes. Wait until the service shows **Live**.
 
-> **Cost:** the Starter instance plus a 1 GB disk is about $7–8 a month. The free plan won't work: it has no disk, so all accounts and content would be lost on every restart.
+> **Just want to try it on Render first?** Use **New + → Web Service** instead of Blueprint: pick the repository, Runtime **Docker**, the **Free** plan, and add the environment variable `DEMO_MODE` = `true`. Then open `https://YOUR-ADDRESS/demo/` and follow step 1.5. Data is wiped whenever the free service restarts, and it must not be connected to your real ReachLMS. For the real thing, use the Blueprint steps above.
+
+> **Cost:** the Starter instance plus a 1 GB disk is about $7–8 a month. For real use the free plan won't work: it has no disk, so all accounts and content would be lost on every restart.
 
 ### 2.2 Check the address
 
 1. On the service page, copy the address at the top, e.g. `https://reach-studio-ab12.onrender.com`.
-2. Go to **Environment**. Make sure **PUBLIC_URL** is **exactly** that address: `https://`, no slash at the end. If you change it, click **Save Changes** and wait for it to redeploy.
+2. Go to **Environment**. If you filled in **PUBLIC_URL**, make sure it is **exactly** that address: `https://`, no slash at the end. If you change it, click **Save Changes** and wait for it to redeploy.
 3. While you're on **Environment**, find **REGISTRATION_CODE** (Render made one up) and copy it. You'll need it in Part 3.
 
 ### 2.3 Check it's running
