@@ -1,0 +1,22 @@
+# Render Blueprint: New → Blueprint → pick this repository.
+# Creates the Reach Studio web service with a persistent disk for the database,
+# uploads and the tool's signing key.
+services:
+  - type: web
+    name: reach-studio
+    runtime: docker
+    plan: starter            # persistent disks need a paid instance
+    healthCheckPath: /health
+    disk:
+      name: reach-studio-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: PUBLIC_URL      # your service address, e.g. https://reach-studio.onrender.com
+        sync: false
+      - key: TRUST_PROXY
+        value: "true"
+      - key: DATA_DIR
+        value: /data
+      - key: REGISTRATION_CODE   # admins type this when installing into ReachLMS
+        generateValue: true

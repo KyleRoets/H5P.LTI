@@ -11,6 +11,8 @@ Teachers click the **Reach Studio** button in the ReachLMS Rich Content Editor (
 
 Students see the content embedded inline. Scored content can also be added as a **graded assignment**, and scores go to the ReachLMS gradebook automatically.
 
+> **New here?** Follow the step-by-step [setup and testing guide](docs/SETUP-GUIDE.md): try it locally, host it on Render, install it into ReachLMS, then test it in a course.
+
 ## Content types
 
 These are 10 of the most-used interactive types in H5P/Lumi-style tools, written as original code with no H5P dependency.
@@ -63,7 +65,9 @@ npm ci
 npm start
 ```
 
-Or with Docker (keep `/data` on a persistent volume):
+Or on **Render**: use *New → Blueprint* with this repository. `render.yaml` sets up the service and a persistent disk; see the [setup guide](docs/SETUP-GUIDE.md#part-2-put-it-on-the-internet-render). **Netlify and other static or serverless hosts can't run this app.**
+
+Or with Docker (keep `/data` on a persistent volume; the image fixes the volume's ownership on start and then runs as the unprivileged `node` user):
 
 ```bash
 docker build -t reach-studio .
