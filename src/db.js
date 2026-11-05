@@ -1,0 +1,107 @@
+import { DatabaseSync } from 'node:sqlite';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { config } from './config.js';
+
+export const db = new DatabaseSync(process.env.DB_FILE || path.join(config.dataDir, 'studio.db'));
+
+db.exec(`
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS platforms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT,
+  issuer TEXT NOT NULL,
+  client_id TEXT NOT NULL,
+  auth_url TEXT NOT NULL,
+  token_url TEXT NOT NULL,
+  jwks_url TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  UNIQUE(issuer, client_id)
+);
+
+CREATE TABLE IF NOT EXISTS deployments (
+  platform_id INTEGER NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
+  deployment_id TEXT NOT NULL,
+  first_seen TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (platform_id, deployment_id)
+);
+
+CREATE TABLE IF NOT EXISTS oidc_states (
+  state TEXT PRIMARY KEY,
+  nonce TEXT NOT NULL,
+  platform_id INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  name TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS lti_identities (
+  platform_id INTEGER NOT NULL REFERENCES platforms(id) ON DELETE CASCADE,
+  sub TEXT NOT NULL,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  linked_at TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (platform_id, sub)
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+  lti TEXT,
+  expires_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS folders (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS contents (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  folder_id TEXT REFERENCES folders(id) ON DELETE SET NULL,
+  type TEXT NOT NULL,
+  title TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now')),
+  updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS contents_user ON contents(user_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS media (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  mime TEXT NOT NULL,
+  size INTEGER NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS attempts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  content_id TEXT NOT NULL,
+  platform_id INTEGER,
+  sub TEXT,
+  score REAL,
+  max_score REAL,
+  passback TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+);
+`);
+
+export const newId = (bytes = 12) => crypto.randomBytes(bytes).toString('base64url');
+
+export function cleanupExpired() {
+  const now = Date.now();
+  db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(now);
+  db.prepare('DELETE FROM oidc_states WHERE created_at < ?').run(now - 10 * 60 * 1000);
+}

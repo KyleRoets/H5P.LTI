@@ -1,0 +1,129 @@
+import { h, textField, selectField, mediaField, listEditor, optionsEditor, safeUrl, formatText, choiceQuestion, feedback, fmtTime, parseTime } from '../util.js';
+
+const ytId = (u) => {
+  const m = String(u || '').match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
+  return m ? m[1] : null;
+};
+
+let ytReady;
+function loadYouTube() {
+  ytReady ||= new Promise((resolve) => {
+    if (window.YT?.Player) return resolve(window.YT);
+    window.onYouTubeIframeAPIReady = () => resolve(window.YT);
+    document.head.append(h('script', { src: 'https://www.youtube.com/iframe_api' }));
+  });
+  return ytReady;
+}
+
+// Wraps <video> or the YouTube player behind one small interface.
+function makePlayer(url, host) {
+  const id = ytId(url);
+  if (id) {
+    const div = h('div', { class: 'yt' });
+    host.append(div);
+    const api = { time: () => 0, pause() {}, play() {}, seek() {} };
+    loadYouTube().then((YT) => {
+      const p = new YT.Player(div, { videoId: id, playerVars: { rel: 0, modestbranding: 1, playsinline: 1 } });
+      api.time = () => p.getCurrentTime?.() || 0;
+      api.pause = () => p.pauseVideo?.();
+      api.play = () => p.playVideo?.();
+      api.seek = (t) => p.seekTo?.(t, true);
+    });
+    return api;
+  }
+  const v = h('video', { src: safeUrl(url), controls: true, playsinline: true, preload: 'metadata' });
+  host.append(v);
+  return { time: () => v.currentTime, pause: () => v.pause(), play: () => v.play(), seek: (t) => { v.currentTime = t; } };
+}
+
+export default {
+  id: 'video',
+  name: 'Interactive Video',
+  description: 'Pause a YouTube or uploaded video at set times to ask questions or show info.',
+  icon: '🎬',
+  color: '#c2255c',
+  graded: true,
+  defaults: () => ({ video: '', interactions: [] }),
+
+  editor(data, ctx) {
+    return h('div', {},
+      mediaField('Video', data, 'video', ctx.onChange, ctx, { video: true, accept: 'video/mp4,video/webm', help: 'Paste a YouTube link or upload an MP4/WebM file.' }),
+      listEditor({
+        items: data.interactions, label: 'Interactions', addText: 'Interaction', onChange: ctx.onChange,
+        itemLabel: (it) => `${fmtTime(it.time)} · ${it.kind === 'info' ? 'ℹ️' : '❓'} ${it.title || it.text?.slice(0, 40) || 'Untitled'}`,
+        create: () => ({ time: (data.interactions.at(-1)?.time || 0) + 30, kind: 'question', title: '', text: '', options: [{ text: '', correct: true }, { text: '', correct: false }] }),
+        renderItem: (it, i, changed) => {
+          const kindHost = h('div');
+          const drawKind = () => kindHost.replaceChildren(
+            it.kind === 'info'
+              ? textField('Message', it, 'text', changed, { multiline: true })
+              : h('div', {}, textField('Question', it, 'text', changed), optionsEditor(it, changed)));
+          drawKind();
+          const timeObj = { t: fmtTime(it.time) };
+          return h('div', {},
+            h('div', { class: 'field-row' },
+              textField('Time (m:ss)', timeObj, 't', () => { it.time = parseTime(timeObj.t); changed(); }),
+              selectField('Type', it, 'kind', [['question', 'Question'], ['info', 'Information']], changed, { after: drawKind })),
+            textField('Title (optional)', it, 'title', changed),
+            kindHost);
+        },
+      }));
+  },
+
+  render(data, ctx) {
+    if (!safeUrl(data.video) && !ytId(data.video)) return h('div', { class: 'rs-empty' }, 'Add a video link or upload a video to get started.');
+    const items = (data.interactions || []).slice().sort((a, b) => a.time - b.time);
+    const graded = items.filter((i) => i.kind !== 'info' && i.options?.some((o) => o.correct));
+    const done = new Map();
+    const wrap = h('div', { class: 'rs-video-wrap' });
+    const player = makePlayer(data.video, wrap);
+    const chips = h('div', { class: 'rs-timeline' });
+    const score = h('span', { class: 'rs-score' });
+    let open = false;
+    let lastT = 0;
+
+    const drawChips = () => {
+      chips.replaceChildren(...items.map((it) => h('button', { class: `rs-chip ${done.has(it) ? 'done' : ''}`, type: 'button', onclick: () => { player.seek(Math.max(0, it.time - 0.5)); lastT = it.time - 1; } },
+        `${fmtTime(it.time)} ${it.kind === 'info' ? 'ℹ️' : '❓'} ${it.title || (it.kind === 'info' ? 'Info' : 'Question')}`)));
+      const s = [...done.values()].filter((v) => v === true).length;
+      score.textContent = `${s} / ${graded.length}`;
+      score.classList.toggle('hidden', !graded.length);
+    };
+
+    const show = (it) => {
+      open = true; player.pause();
+      const card = h('div', { class: 'rs-overlay-card', role: 'dialog', 'aria-label': it.title || 'Interaction' });
+      const overlay = h('div', { class: 'rs-overlay' }, card);
+      const resume = () => { overlay.remove(); open = false; drawChips(); player.play(); };
+      if (it.title) card.append(h('h3', { style: { marginTop: 0 } }, it.title));
+      if (it.kind === 'info') {
+        card.append(h('div', { class: 'rs-text', html: formatText(it.text) }), h('div', { class: 'rs-actions' }, h('button', { class: 'btn primary', type: 'button', onclick: () => { done.set(it, 'seen'); resume(); } }, 'Continue')));
+      } else {
+        const q = choiceQuestion(it);
+        const fb = h('div');
+        const go = h('button', { class: 'btn primary hidden', type: 'button', onclick: resume }, 'Continue');
+        const check = h('button', { class: 'btn primary', type: 'button', onclick: () => {
+          const ok = q.check(); if (ok === null) return;
+          done.set(it, ok); check.remove(); go.classList.remove('hidden'); fb.append(feedback(ok)); drawChips();
+          if (done.size >= items.length || [...graded].every((g) => done.has(g))) {
+            ctx.report?.([...done.values()].filter((v) => v === true).length, graded.length);
+          }
+        } }, 'Check');
+        card.append(q.el, fb, h('div', { class: 'rs-actions' }, check, go));
+      }
+      wrap.append(overlay);
+      card.querySelector('button')?.focus();
+    };
+
+    const timer = setInterval(() => {
+      if (!wrap.isConnected) { clearInterval(timer); return; } // preview was re-rendered
+      if (open) return;
+      const t = player.time();
+      const hit = items.find((it) => !done.has(it) && it.time > lastT - 0.01 && it.time <= t && t - it.time < 2);
+      lastT = t;
+      if (hit) show(hit);
+    }, 250);
+    drawChips();
+    return h('div', {}, wrap, h('div', { class: 'rs-actions' }, h('span', { class: 'rs-status' }, items.length ? 'Jump to:' : ''), score), chips);
+  },
+};

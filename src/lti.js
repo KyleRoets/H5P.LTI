@@ -1,0 +1,414 @@
+// LTI 1.3 / LTI Advantage implementation for Canvas (ReachLMS):
+//  - OIDC third-party login  (/lti/login)
+//  - Launch validation       (/lti/launch)   LtiResourceLinkRequest + LtiDeepLinkingRequest
+//  - Deep Linking responses  (signed JWT posted back to Canvas)
+//  - Assignment & Grade Services score passback (client_credentials + private_key_jwt)
+//  - Dynamic Registration    (/lti/register)
+//  - Manual Canvas JSON config (/lti/canvas-config.json) and tool JWKS (/.well-known/jwks.json)
+import express from 'express';
+import { SignJWT, jwtVerify, createRemoteJWKSet } from 'jose';
+import { db, newId } from './db.js';
+import { config } from './config.js';
+import { signingKey, publicJwks } from './keys.js';
+import { createSession } from './sessions.js';
+import { views } from './views.js';
+import { TYPES } from './types.js';
+
+const C = {
+  MSG: 'https://purl.imsglobal.org/spec/lti/claim/message_type',
+  VER: 'https://purl.imsglobal.org/spec/lti/claim/version',
+  DEP: 'https://purl.imsglobal.org/spec/lti/claim/deployment_id',
+  ROLES: 'https://purl.imsglobal.org/spec/lti/claim/roles',
+  CTX: 'https://purl.imsglobal.org/spec/lti/claim/context',
+  CUSTOM: 'https://purl.imsglobal.org/spec/lti/claim/custom',
+  TARGET: 'https://purl.imsglobal.org/spec/lti/claim/target_link_uri',
+  DL: 'https://purl.imsglobal.org/spec/lti-dl/claim/deep_linking_settings',
+  AGS: 'https://purl.imsglobal.org/spec/lti-ags/claim/endpoint',
+  CANVAS_PLACEMENT: 'https://www.instructure.com/placement',
+  TOOL_CFG: 'https://purl.imsglobal.org/spec/lti-tool-configuration',
+  PLATFORM_CFG: 'https://purl.imsglobal.org/spec/lti-platform-configuration',
+};
+
+export const SCOPES = [
+  'https://purl.imsglobal.org/spec/lti-ags/scope/lineitem',
+  'https://purl.imsglobal.org/spec/lti-ags/scope/score',
+  'https://purl.imsglobal.org/spec/lti-ags/scope/result.readonly',
+];
+
+const INSTRUCTOR_ROLES = ['#Instructor', '#Administrator', '#ContentDeveloper', '#TeachingAssistant', 'membership/Instructor'];
+const url = (p) => `${config.publicUrl}${p}`;
+const iconUrl = () => url('/img/icon.svg');
+
+// ---------- platform helpers ----------
+export function findPlatform(issuer, clientId) {
+  if (clientId) return db.prepare('SELECT * FROM platforms WHERE issuer = ? AND client_id = ?').get(issuer, String(clientId));
+  const rows = db.prepare('SELECT * FROM platforms WHERE issuer = ?').all(issuer);
+  return rows.length === 1 ? rows[0] : null;
+}
+
+export function upsertPlatform(p) {
+  db.prepare(`INSERT INTO platforms (name, issuer, client_id, auth_url, token_url, jwks_url)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT(issuer, client_id) DO UPDATE SET name=excluded.name, auth_url=excluded.auth_url,
+              token_url=excluded.token_url, jwks_url=excluded.jwks_url`)
+    .run(p.name || p.issuer, p.issuer, String(p.client_id), p.auth_url, p.token_url, p.jwks_url);
+  return findPlatform(p.issuer, p.client_id);
+}
+
+const jwksCache = new Map();
+function platformJwks(platform) {
+  if (!jwksCache.has(platform.jwks_url)) jwksCache.set(platform.jwks_url, createRemoteJWKSet(new URL(platform.jwks_url)));
+  return jwksCache.get(platform.jwks_url);
+}
+
+function isInstructor(roles = []) {
+  return roles.some((r) => INSTRUCTOR_ROLES.some((x) => r.includes(x)));
+}
+
+// ---------- tool configuration (manual install + dynamic registration) ----------
+function messages() {
+  return [
+    {
+      type: 'LtiDeepLinkingRequest',
+      target_link_uri: url('/lti/launch?placement=editor_button'),
+      label: config.toolName,
+      icon_uri: iconUrl(),
+      placements: ['editor_button'],
+    },
+    {
+      type: 'LtiDeepLinkingRequest',
+      target_link_uri: url('/lti/launch?placement=assignment_selection'),
+      label: `${config.toolName} activity`,
+      icon_uri: iconUrl(),
+      placements: ['assignment_selection'],
+    },
+    {
+      type: 'LtiDeepLinkingRequest',
+      target_link_uri: url('/lti/launch?placement=link_selection'),
+      label: `${config.toolName} activity`,
+      icon_uri: iconUrl(),
+      placements: ['link_selection'],
+    },
+    {
+      type: 'LtiResourceLinkRequest',
+      target_link_uri: url('/lti/launch?placement=course_navigation'),
+      label: config.toolName,
+      icon_uri: iconUrl(),
+      placements: ['course_navigation'],
+      roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'],
+      'https://canvas.instructure.com/lti/course_navigation/default_enabled': false,
+    },
+  ];
+}
+
+export function registrationPayload() {
+  const domain = new URL(config.publicUrl).host;
+  return {
+    application_type: 'web',
+    client_name: config.toolName,
+    client_uri: config.publicUrl,
+    logo_uri: iconUrl(),
+    grant_types: ['client_credentials', 'implicit'],
+    response_types: ['id_token'],
+    initiate_login_uri: url('/lti/login'),
+    redirect_uris: [url('/lti/launch')],
+    jwks_uri: url('/.well-known/jwks.json'),
+    token_endpoint_auth_method: 'private_key_jwt',
+    scope: SCOPES.join(' '),
+    [C.TOOL_CFG]: {
+      domain,
+      target_link_uri: url('/lti/launch'),
+      description: 'Build hotspot images, slides, interactive video, quizzes and more, and embed them anywhere in ReachLMS.',
+      claims: ['sub', 'iss', 'name', 'given_name', 'family_name', 'email', 'locale'],
+      messages: messages(),
+      'https://canvas.instructure.com/lti/privacy_level': 'public',
+      'https://canvas.instructure.com/lti/tool_id': 'reach-studio',
+      'https://canvas.instructure.com/lti/vendor': 'ReachLMS',
+    },
+  };
+}
+
+export function canvasJsonConfig() {
+  const domain = new URL(config.publicUrl).host;
+  return {
+    title: config.toolName,
+    description: 'Build and embed interactive content (hotspots, slides, interactive video, quizzes, drag and drop and more).',
+    oidc_initiation_url: url('/lti/login'),
+    target_link_uri: url('/lti/launch'),
+    public_jwk_url: url('/.well-known/jwks.json'),
+    scopes: SCOPES,
+    extensions: [{
+      platform: 'canvas.instructure.com',
+      domain,
+      tool_id: 'reach-studio',
+      privacy_level: 'public',
+      settings: {
+        text: config.toolName,
+        icon_url: iconUrl(),
+        placements: [
+          { placement: 'editor_button', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=editor_button'), text: config.toolName, icon_url: iconUrl(), selection_width: 1100, selection_height: 720 },
+          { placement: 'assignment_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=assignment_selection'), text: `${config.toolName} activity`, selection_width: 1100, selection_height: 720 },
+          { placement: 'link_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=link_selection'), text: `${config.toolName} activity`, selection_width: 1100, selection_height: 720 },
+          { placement: 'course_navigation', message_type: 'LtiResourceLinkRequest', target_link_uri: url('/lti/launch?placement=course_navigation'), text: config.toolName, default: 'disabled', required_permissions: 'manage_course_content_add' },
+        ],
+      },
+    }],
+  };
+}
+
+// ---------- AGS: access token + score passback ----------
+const tokenCache = new Map();
+export async function getAccessToken(platform, scopes) {
+  const key = `${platform.id}|${scopes.join(' ')}`;
+  const cached = tokenCache.get(key);
+  if (cached && cached.exp > Date.now() + 30000) return cached.token;
+  const k = signingKey();
+  const assertion = await new SignJWT({})
+    .setProtectedHeader({ alg: 'RS256', kid: k.kid, typ: 'JWT' })
+    .setIssuer(platform.client_id).setSubject(platform.client_id)
+    .setAudience(platform.token_url).setIssuedAt().setExpirationTime('5m').setJti(newId())
+    .sign(k.privateKey);
+  const res = await fetch(platform.token_url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+      client_assertion: assertion,
+      scope: scopes.join(' '),
+    }),
+  });
+  if (!res.ok) throw new Error(`Token request failed (${res.status}): ${await res.text()}`);
+  const body = await res.json();
+  tokenCache.set(key, { token: body.access_token, exp: Date.now() + (body.expires_in || 3600) * 1000 });
+  return body.access_token;
+}
+
+export async function postScore(platform, lineitem, sub, scoreGiven, scoreMaximum) {
+  const token = await getAccessToken(platform, ['https://purl.imsglobal.org/spec/lti-ags/scope/score']);
+  const u = new URL(lineitem);
+  u.pathname = u.pathname.replace(/\/$/, '') + '/scores';
+  const res = await fetch(u, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/vnd.ims.lis.v1.score+json' },
+    body: JSON.stringify({
+      userId: sub,
+      scoreGiven,
+      scoreMaximum,
+      activityProgress: 'Completed',
+      gradingProgress: 'FullyGraded',
+      timestamp: new Date().toISOString(),
+    }),
+  });
+  if (!res.ok) throw new Error(`Score passback failed (${res.status}): ${await res.text()}`);
+  return true;
+}
+
+// ---------- Deep linking response ----------
+export async function buildDeepLinkResponse(lti, content) {
+  const platform = db.prepare('SELECT * FROM platforms WHERE id = ?').get(lti.platformId);
+  const type = TYPES[content.type] || {};
+  const data = JSON.parse(content.data);
+  const maxScore = type.maxScore ? type.maxScore(data) : 0;
+  const item = {
+    type: 'ltiResourceLink',
+    title: content.title,
+    url: url(`/lti/launch?content=${content.id}`),
+    custom: { content_id: content.id },
+    icon: { url: iconUrl(), width: 64, height: 64 },
+  };
+  if (lti.placement === 'editor_button' || !lti.placement) {
+    const size = type.embedSize || { width: 800, height: 520 };
+    item.iframe = { width: size.width, height: size.height };
+  }
+  if (lti.placement === 'assignment_selection' && maxScore > 0) {
+    item.lineItem = { scoreMaximum: maxScore, label: content.title, resourceId: content.id, tag: 'reach-studio' };
+  }
+  const k = signingKey();
+  const claims = {
+    nonce: newId(16),
+    [C.MSG]: 'LtiDeepLinkingResponse',
+    [C.VER]: '1.3.0',
+    [C.DEP]: lti.deploymentId,
+    'https://purl.imsglobal.org/spec/lti-dl/claim/content_items': [item],
+    'https://purl.imsglobal.org/spec/lti-dl/claim/msg': `Added "${content.title}"`,
+  };
+  if (lti.dl?.data) claims['https://purl.imsglobal.org/spec/lti-dl/claim/data'] = lti.dl.data;
+  const jwt = await new SignJWT(claims)
+    .setProtectedHeader({ alg: 'RS256', kid: k.kid, typ: 'JWT' })
+    .setIssuer(platform.client_id).setAudience(platform.issuer)
+    .setIssuedAt().setExpirationTime('5m')
+    .sign(k.privateKey);
+  return { returnUrl: lti.dl.returnUrl, jwt, item };
+}
+
+// ---------- Router ----------
+export const ltiRouter = express.Router();
+ltiRouter.use(express.urlencoded({ extended: false }));
+
+ltiRouter.get('/.well-known/jwks.json', (req, res) => res.json(publicJwks()));
+ltiRouter.get('/lti/canvas-config.json', (req, res) => res.json(canvasJsonConfig()));
+
+// Step 1: OIDC login initiation (Canvas -> tool), GET or POST.
+ltiRouter.all('/lti/login', (req, res) => {
+  const p = { ...req.query, ...req.body };
+  const platform = findPlatform(p.iss, p.client_id);
+  if (!platform) {
+    return res.status(400).send(views.message('This ReachLMS site is not registered with Reach Studio',
+      `Issuer <code>${views.esc(p.iss)}</code> with client ID <code>${views.esc(p.client_id)}</code> is unknown. Ask your administrator to install the tool using Dynamic Registration.`));
+  }
+  const state = newId(24);
+  const nonce = newId(24);
+  db.prepare('INSERT INTO oidc_states (state, nonce, platform_id, created_at) VALUES (?, ?, ?, ?)').run(state, nonce, platform.id, Date.now());
+  const auth = new URL(platform.auth_url);
+  const params = {
+    scope: 'openid',
+    response_type: 'id_token',
+    response_mode: 'form_post',
+    prompt: 'none',
+    client_id: platform.client_id,
+    redirect_uri: url('/lti/launch'),
+    login_hint: p.login_hint,
+    state,
+    nonce,
+  };
+  if (p.lti_message_hint) params.lti_message_hint = p.lti_message_hint;
+  for (const [k, v] of Object.entries(params)) if (v !== undefined) auth.searchParams.set(k, v);
+  res.redirect(302, auth.toString());
+});
+
+// Step 3: authentication response = the actual launch.
+ltiRouter.post('/lti/launch', async (req, res) => {
+  try {
+    const { id_token: idToken, state } = req.body;
+    if (!idToken || !state) throw new Error('Missing id_token or state.');
+    const st = db.prepare('SELECT * FROM oidc_states WHERE state = ?').get(state);
+    if (!st) throw new Error('Unknown or expired launch state. Please try again.');
+    db.prepare('DELETE FROM oidc_states WHERE state = ?').run(state); // single use
+    const platform = db.prepare('SELECT * FROM platforms WHERE id = ?').get(st.platform_id);
+
+    const { payload } = await jwtVerify(idToken, platformJwks(platform), {
+      issuer: platform.issuer,
+      audience: platform.client_id,
+      algorithms: ['RS256'],
+      clockTolerance: 60,
+    });
+    if (payload.nonce !== st.nonce) throw new Error('Nonce mismatch.');
+    if (Array.isArray(payload.aud) && payload.aud.length > 1 && payload.azp !== platform.client_id) throw new Error('Invalid azp.');
+    if (payload[C.VER] !== '1.3.0') throw new Error('Unsupported LTI version.');
+    const deploymentId = payload[C.DEP];
+    if (!deploymentId) throw new Error('Missing deployment_id.');
+    db.prepare('INSERT OR IGNORE INTO deployments (platform_id, deployment_id) VALUES (?, ?)').run(platform.id, deploymentId);
+
+    const roles = payload[C.ROLES] || [];
+    const target = payload[C.TARGET] || '';
+    let placement = payload[C.CANVAS_PLACEMENT] || null;
+    try { placement = placement || new URL(target).searchParams.get('placement'); } catch { /* ignore */ }
+    const custom = payload[C.CUSTOM] || {};
+    let contentId = custom.content_id || null;
+    try { contentId = contentId || new URL(target).searchParams.get('content'); } catch { /* ignore */ }
+
+    const lti = {
+      platformId: platform.id,
+      platformName: platform.name,
+      deploymentId,
+      sub: payload.sub,
+      name: payload.name || [payload.given_name, payload.family_name].filter(Boolean).join(' '),
+      email: payload.email || '',
+      roles,
+      instructor: isInstructor(roles),
+      context: payload[C.CTX]?.title || '',
+      placement,
+    };
+    const identity = payload.sub
+      ? db.prepare('SELECT user_id FROM lti_identities WHERE platform_id = ? AND sub = ?').get(platform.id, payload.sub)
+      : null;
+    const userId = identity?.user_id || null;
+
+    const msgType = payload[C.MSG];
+    if (msgType === 'LtiDeepLinkingRequest') {
+      const dl = payload[C.DL] || {};
+      if (!dl.deep_link_return_url) throw new Error('Missing deep_link_return_url.');
+      lti.kind = 'deeplink';
+      lti.dl = { returnUrl: dl.deep_link_return_url, data: dl.data, acceptMultiple: !!dl.accept_multiple };
+      const token = createSession(userId, lti);
+      return res.send(views.studio(token));
+    }
+
+    if (msgType === 'LtiResourceLinkRequest') {
+      if (contentId) {
+        const content = db.prepare('SELECT * FROM contents WHERE id = ?').get(contentId);
+        if (!content) return res.status(404).send(views.message('Content not found', 'This interactive content may have been deleted by its owner.'));
+        const ags = payload[C.AGS];
+        lti.kind = 'player';
+        lti.contentId = contentId;
+        if (ags?.lineitem && !lti.instructor && (ags.scope || []).includes('https://purl.imsglobal.org/spec/lti-ags/scope/score')) {
+          lti.ags = { lineitem: ags.lineitem };
+        }
+        const token = createSession(userId, lti);
+        const canEdit = !!userId && userId === content.user_id;
+        return res.send(views.player(token, content, { canEdit, graded: !!lti.ags }));
+      }
+      // Course navigation (or any launch without content) opens the library.
+      if (!lti.instructor) return res.send(views.message(config.toolName, 'Your teachers use Reach Studio to build interactive activities. You will find them inside your course pages, quizzes and assignments.'));
+      lti.kind = 'studio';
+      const token = createSession(userId, lti);
+      return res.send(views.studio(token));
+    }
+    throw new Error(`Unsupported message type: ${msgType}`);
+  } catch (err) {
+    console.error('Launch error:', err);
+    res.status(400).send(views.message('Launch failed', views.esc(err.message)));
+  }
+});
+
+// ---------- Dynamic Registration ----------
+ltiRouter.get('/lti/register', (req, res) => {
+  const { openid_configuration: oc, registration_token: rt } = req.query;
+  if (!oc) return res.status(400).send(views.message('Dynamic Registration', `Paste <code>${views.esc(url('/lti/register'))}</code> into ReachLMS → Admin → Developer Keys (or Apps) → + Dynamic Registration.`));
+  res.send(views.register(oc, rt || '', !!config.registrationCode));
+});
+
+ltiRouter.post('/lti/register', async (req, res) => {
+  try {
+    const { openid_configuration: oc, registration_token: rt, code } = req.body;
+    if (config.registrationCode && code !== config.registrationCode) {
+      return res.status(403).send(views.register(oc, rt, true, 'That installation code is not correct.'));
+    }
+    const ocUrl = new URL(oc);
+    if (ocUrl.protocol !== 'https:' && !config.allowInsecure) throw new Error('openid_configuration must use https.');
+    const headers = { Accept: 'application/json' };
+    if (rt) headers.Authorization = `Bearer ${rt}`;
+    const cfgRes = await fetch(ocUrl, { headers });
+    if (!cfgRes.ok) throw new Error(`Could not read the platform configuration (${cfgRes.status}).`);
+    const pc = await cfgRes.json();
+    for (const k of ['issuer', 'authorization_endpoint', 'token_endpoint', 'jwks_uri', 'registration_endpoint']) {
+      if (!pc[k]) throw new Error(`Platform configuration is missing ${k}.`);
+    }
+    const regRes = await fetch(pc.registration_endpoint, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify(registrationPayload()),
+    });
+    if (!regRes.ok) throw new Error(`Registration was rejected (${regRes.status}): ${await regRes.text()}`);
+    const reg = await regRes.json();
+    const platformName = pc[C.PLATFORM_CFG]?.['https://canvas.instructure.com/lti/account_name'] || pc.issuer;
+    const platform = upsertPlatform({
+      name: platformName,
+      issuer: pc.issuer,
+      client_id: reg.client_id,
+      auth_url: pc.authorization_endpoint,
+      token_url: pc.token_endpoint,
+      jwks_url: pc.jwks_uri,
+    });
+    const dep = reg[C.TOOL_CFG]?.deployment_id;
+    if (dep) db.prepare('INSERT OR IGNORE INTO deployments (platform_id, deployment_id) VALUES (?, ?)').run(platform.id, dep);
+    console.log(`Registered platform ${platform.issuer} client_id=${platform.client_id}`);
+    res.send(views.registered(platformName, platform.client_id));
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(400).send(views.message('Registration failed', views.esc(err.message)));
+  }
+});
+
+export { C as CLAIMS };
