@@ -12,7 +12,7 @@ import { config, internalUrl } from './config.js';
 import { signingKey, publicJwks } from './keys.js';
 import { createSession } from './sessions.js';
 import { views } from './views.js';
-import { TYPES } from './types.js';
+import { TYPES, embedSize } from './types.js';
 
 const C = {
   MSG: 'https://purl.imsglobal.org/spec/lti/claim/message_type',
@@ -37,7 +37,7 @@ export const SCOPES = [
 
 const INSTRUCTOR_ROLES = ['#Instructor', '#Administrator', '#ContentDeveloper', '#TeachingAssistant', 'membership/Instructor'];
 const url = (p) => `${config.publicUrl}${p}`;
-const iconUrl = () => url('/img/icon.svg');
+const iconUrl = () => url('/img/icon-64.png');
 
 // ---------- platform helpers ----------
 export function findPlatform(issuer, clientId) {
@@ -218,7 +218,7 @@ export async function buildDeepLinkResponse(lti, content) {
     icon: { url: iconUrl(), width: 64, height: 64 },
   };
   if (lti.placement === 'editor_button' || !lti.placement) {
-    const size = type.embedSize || { width: 800, height: 520 };
+    const size = embedSize(content.type, data);
     item.iframe = { width: size.width, height: size.height };
   }
   if (lti.placement === 'assignment_selection' && maxScore > 0) {
@@ -350,7 +350,7 @@ ltiRouter.post('/lti/launch', async (req, res) => {
         return res.send(views.player(token, content, { canEdit, graded: !!lti.ags }));
       }
       // Course navigation (or any launch without content) opens the library.
-      if (!lti.instructor) return res.send(views.message(config.toolName, 'Your teachers use Reach Studio to build interactive activities. You will find them inside your course pages, quizzes and assignments.'));
+      if (!lti.instructor) return res.send(views.message(config.toolName, 'Your teachers use ReachStudio to build interactive activities. You will find them inside your course pages, quizzes and assignments.'));
       lti.kind = 'studio';
       const token = createSession(userId, lti);
       return res.send(views.studio(token));

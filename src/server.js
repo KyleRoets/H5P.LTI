@@ -6,6 +6,7 @@ import { cleanupExpired } from './db.js';
 import { loadKeys } from './keys.js';
 import { ltiRouter } from './lti.js';
 import { apiRouter, mediaStatic } from './api.js';
+import { adminRouter } from './admin.js';
 import { views } from './views.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -32,6 +33,7 @@ export async function createApp() {
     console.log(`DEMO MODE: pretend ReachLMS at ${config.publicUrl}/demo/ — do not use this instance with your real ReachLMS.`);
   }
   app.use(ltiRouter);
+  app.use(adminRouter);
   app.use(apiRouter);
   app.get('/health', (req, res) => res.json({ ok: true }));
   app.get('/', (req, res) => res.send(views.message(config.toolName,

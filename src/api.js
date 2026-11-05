@@ -13,7 +13,14 @@ import { views } from './views.js';
 export const apiRouter = express.Router();
 apiRouter.use('/api', express.json({ limit: '2mb' }));
 
-const publicUser = (u) => (u ? { id: u.id, name: u.name, email: u.email } : null);
+const publicUser = (u) => (u ? { id: u.id, name: u.name, email: u.email, role: u.role, status: u.status } : null);
+
+/** Admin role comes from ADMIN_EMAILS; in demo mode the first account is made an admin so the Admin view can be tried. */
+function roleFor(email) {
+  if (config.adminEmails.includes(String(email).toLowerCase())) return 'admin';
+  if (config.demo && !db.prepare("SELECT 1 FROM users WHERE role = 'admin'").get()) return 'admin';
+  return 'teacher';
+}
 const getUser = (id) => (id ? db.prepare('SELECT * FROM users WHERE id = ?').get(id) : null);
 const emailOk = (e) => typeof e === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 200;
 
@@ -65,8 +72,8 @@ apiRouter.post('/api/auth/signup', async (req, res) => {
     return res.status(409).json({ error: 'An account with this email already exists. Sign in instead.' });
   }
   const id = newId();
-  db.prepare('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)')
-    .run(id, String(email).trim(), String(name).trim(), await bcrypt.hash(String(password), 11));
+  db.prepare('INSERT INTO users (id, email, name, password_hash, role) VALUES (?, ?, ?, ?, ?)')
+    .run(id, String(email).trim(), String(name).trim(), await bcrypt.hash(String(password), 11), roleFor(email));
   const token = startSession(req, id);
   res.json({ token, user: publicUser(getUser(id)) });
 });
@@ -79,6 +86,11 @@ apiRouter.post('/api/auth/login', async (req, res) => {
   if (!user || !(await bcrypt.compare(String(password || ''), user.password_hash))) {
     attempts.get(key).push(Date.now());
     return res.status(401).json({ error: 'Email or password is incorrect.' });
+  }
+  if (user.status !== 'active') return res.status(403).json({ error: 'Your ReachStudio account has been suspended. Please contact your administrator.' });
+  if (user.role !== 'admin' && config.adminEmails.includes(user.email.toLowerCase())) {
+    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(user.id);
+    user.role = 'admin';
   }
   const token = startSession(req, user.id);
   res.json({ token, user: publicUser(user) });
@@ -212,7 +224,7 @@ apiRouter.post('/api/uploads', requireUser, upload.single('file'), (req, res) =>
 // ---------- embed (deep linking response) ----------
 apiRouter.post('/api/embed', requireUser, async (req, res) => {
   const lti = req.session.lti;
-  if (lti?.kind !== 'deeplink') return res.status(400).json({ error: 'Embedding is only available when Reach Studio is opened from the ReachLMS editor or an assignment.' });
+  if (lti?.kind !== 'deeplink') return res.status(400).json({ error: 'Embedding is only available when ReachStudio is opened from the ReachLMS editor or an assignment.' });
   const c = db.prepare('SELECT * FROM contents WHERE id = ? AND user_id = ?').get(req.body?.contentId, req.session.userId);
   if (!c) return res.status(404).json({ error: 'Content not found.' });
   try {
@@ -250,8 +262,11 @@ apiRouter.post('/api/score', requireSession, async (req, res) => {
 // ---------- previews (owner only) ----------
 apiRouter.get('/preview/:id', (req, res) => {
   const s = getSession(tokenFrom(req));
-  const c = s?.userId && db.prepare('SELECT * FROM contents WHERE id = ? AND user_id = ?').get(req.params.id, s.userId);
-  if (!c) return res.status(404).send(views.message('Preview unavailable', 'Sign in to Reach Studio to preview your content.'));
+  const u = s?.userId && getUser(s.userId);
+  const c = u && u.status === 'active' && (u.role === 'admin'
+    ? db.prepare('SELECT * FROM contents WHERE id = ?').get(req.params.id)
+    : db.prepare('SELECT * FROM contents WHERE id = ? AND user_id = ?').get(req.params.id, u.id));
+  if (!c) return res.status(404).send(views.message('Preview unavailable', 'Sign in to ReachStudio to preview your content.'));
   res.send(views.player(s.token, c, { canEdit: false, graded: false, preview: true }));
 });
 

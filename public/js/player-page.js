@@ -1,11 +1,11 @@
 // Renders one piece of content inside ReachLMS (embedded iframe, module item or assignment).
 import { h, makeApi, toast } from './util.js';
-import { TYPES } from './types/index.js';
+import { icon } from './icons.js';
+import { renderContent } from './types/index.js';
 
 const BOOT = window.BOOT;
 const api = makeApi(() => BOOT.token);
 const root = document.getElementById('player');
-const t = TYPES[BOOT.content.type];
 
 const status = h('span', { class: 'rs-status' });
 let lastSent = null;
@@ -17,8 +17,8 @@ async function report(score, max) {
   lastSent = key;
   try {
     const r = await api.post('/api/score', { score, max });
-    if (r.passback === 'sent') { status.textContent = `✓ Score ${r.score}/${r.max} sent to the gradebook`; }
-    else if (r.passback === 'failed') { status.textContent = 'Score could not be sent to the gradebook — please tell your teacher.'; }
+    if (r.passback === 'sent') status.replaceChildren(icon('check', { size: 14 }), ` Score ${r.score}/${r.max} sent to the gradebook`);
+    else if (r.passback === 'failed') status.textContent = 'Your score could not be sent to the gradebook — please tell your teacher.';
   } catch (e) { toast(e.message, 'error'); }
 }
 
@@ -29,12 +29,14 @@ async function editInStudio() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-root.append(
-  h('div', { class: 'rs-toolbar' },
-    BOOT.graded && h('span', {}, '📝 Graded activity'),
+const content = renderContent(BOOT.content.type, BOOT.content.data, { report });
+document.body.style.background = BOOT.content.data.style?.bg || '';
+root.append(...[
+  (BOOT.graded || BOOT.canEdit) && h('div', { class: 'rs-toolbar' },
+    BOOT.graded && h('span', { class: 'graded-tag' }, icon('award', { size: 14 }), 'Graded activity'),
     status,
-    BOOT.canEdit && h('button', { class: 'btn sm', type: 'button', title: 'You own this content', onclick: editInStudio }, '✎ Edit in Reach Studio')),
-  h('div', { class: 'rs' }, t ? t.render(BOOT.content.data, { report }) : h('div', { class: 'rs-empty' }, 'Unknown content type.')));
+    BOOT.canEdit && h('button', { class: 'btn sm', type: 'button', title: 'You own this content', onclick: editInStudio }, icon('edit', { size: 14 }), h('span', {}, 'Edit in ReachStudio'))),
+  content].filter(Boolean));
 
 // Tell ReachLMS (Canvas) how tall the content is so the iframe fits without scrollbars.
 let lastH = 0;

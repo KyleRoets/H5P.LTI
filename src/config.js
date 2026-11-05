@@ -31,7 +31,9 @@ export const config = {
   // Never enable it on the instance your real ReachLMS uses.
   demo,
   dataDir: path.resolve(process.env.DATA_DIR || './data'),
-  toolName: process.env.TOOL_NAME || 'Reach Studio',
+  toolName: process.env.TOOL_NAME || 'ReachStudio',
+  // Comma-separated emails that get the Admin view (manage all users). See also `npm run make-admin`.
+  adminEmails: (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
   // How long a studio/player session token stays valid.
   sessionHours: Number(process.env.SESSION_HOURS || 8),
   // Max upload size for images/video in MB.

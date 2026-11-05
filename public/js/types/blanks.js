@@ -1,49 +1,50 @@
-import { h, textField, checkField, parseMarked, actionRow, esc } from '../util.js';
+import { h, checkField, actionRow, richField, richBlock, isBlank, emptyState } from '../util.js';
+import { buildAnswerText } from './_shared.js';
 
 const answersOf = (s) => s.split('/').map((a) => a.trim()).filter(Boolean);
 
 export default {
   id: 'blanks',
   name: 'Fill in the Blanks',
-  description: 'Learners type missing words into a text. Accepts alternative answers.',
-  icon: '✏️',
-  color: '#0c8599',
+  icon: 'type-blanks',
   graded: true,
-  defaults: () => ({
-    instructions: 'Fill in the missing words.',
-    text: 'The capital of France is *Paris*.\n\nWater boils at *100* degrees Celsius and freezes at *0* degrees.\n\nA word that sounds like another is a *homophone/homonym*.',
-    caseSensitive: false,
+  tagline: 'Learners type the missing words into a text.',
+  about: {
+    summary: 'You write a passage and mark the words learners must supply. Learners see the passage with empty boxes and type the missing words. You can accept alternative answers (for example both "colour" and "color").',
+    uses: ['Recall key vocabulary or definitions', 'Complete formulas, dates, names or numbers', 'Language practice (verb endings, spelling, grammar)', 'Summaries where learners fill in the main ideas'],
+    learners: 'Learners type into each gap (Enter moves to the next one) and press Check. Correct answers turn green; for wrong ones they can try again or show the answers.',
+    tip: 'Select a word in your text and press "Make answer". To accept alternatives, make the answer read "colour/color" — any of the options separated by "/" will be marked correct.',
+  },
+  defaults: () => ({ instructions: '', html: '', caseSensitive: false }),
+  example: () => ({
+    title: 'The cell',
+    data: { instructions: '<p>Fill in the missing words.</p>', html: '<p>The <mark>nucleus</mark> controls the cell and contains <mark>DNA</mark>.</p><p>Energy is released in the <mark>mitochondria/mitochondrion</mark> through respiration.</p>', caseSensitive: false },
   }),
 
   editor(data, ctx) {
     return h('div', {},
-      textField('Instructions', data, 'instructions', ctx.onChange),
-      h('div', { class: 'syntax-tip', html: 'Put each answer between asterisks: <code>The sky is *blue*.</code><br>Allow alternatives with a slash: <code>*colour/color*</code>' }),
-      textField('Text', data, 'text', ctx.onChange, { multiline: true, rows: 10 }),
+      richField('Instructions (optional)', data, 'instructions', ctx.onChange, { compact: true, placeholder: 'e.g. Fill in the missing words.' }),
+      richField('Text', data, 'html', ctx.onChange, {
+        answers: 'blank',
+        placeholder: 'Type your text, then select a word and press "Make answer".',
+        help: 'Answers are highlighted. To accept alternatives write them with a slash, e.g. colour/color. Press "Make answer" again inside a highlight to remove it.',
+      }),
       checkField('Answers are case sensitive', data, 'caseSensitive', ctx.onChange));
   },
 
   render(data, ctx) {
-    const parts = parseMarked(data.text);
     const blanks = [];
-    const body = h('div', { class: 'rs-cloze' });
-    // Rebuild paragraphs while keeping inputs inline.
-    let para = h('p');
-    body.append(para);
-    parts.forEach((p) => {
-      if (p.marked) {
-        const answers = answersOf(p.text);
-        const input = h('input', { type: 'text', 'aria-label': `Blank ${blanks.length + 1}`, autocomplete: 'off', spellcheck: 'false', size: Math.max(6, Math.max(...answers.map((a) => a.length)) + 2) });
+    const body = buildAnswerText(data, {
+      mark: (text) => {
+        const answers = answersOf(text);
+        const input = h('input', { type: 'text', 'aria-label': `Blank ${blanks.length + 1}`, autocomplete: 'off', spellcheck: 'false', size: Math.max(6, Math.max(0, ...answers.map((a) => a.length)) + 2) });
         const sol = h('span', { class: 'rs-solution hidden' });
         blanks.push({ input, answers, sol });
-        para.append(input, sol);
-      } else {
-        p.text.split(/(\n{2,})/).forEach((chunk) => {
-          if (/^\n{2,}$/.test(chunk)) { para = h('p'); body.append(para); } else para.append(h('span', { html: esc(chunk).replace(/\n/g, '<br>') }));
-        });
-      }
+        return h('span', { class: 'rs-answer-el' }, input, sol);
+      },
     });
-    if (!blanks.length) return h('div', { class: 'rs-empty' }, 'Mark answers with *asterisks* in the text.');
+    body.classList.add('rs-cloze');
+    if (!blanks.length) return emptyState('type-blanks', 'Write your text, then select words and press "Make answer".');
     const norm = (s) => (data.caseSensitive ? s.trim() : s.trim().toLowerCase()).replace(/\s+/g, ' ');
     const actions = actionRow({
       onCheck: () => {
@@ -63,7 +64,7 @@ export default {
       },
       onShow: () => blanks.forEach((b) => { if (b.input.classList.contains('wrong')) { b.sol.textContent = `→ ${b.answers[0]}`; b.sol.classList.remove('hidden'); } }),
     });
-    body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); const i = blanks.findIndex((b) => b.input === e.target); (blanks[i + 1]?.input)?.focus(); } });
-    return h('div', {}, data.instructions && h('p', { class: 'rs-instructions' }, data.instructions), body, actions.el);
+    body.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); const i = blanks.findIndex((b) => b.input === e.target); blanks[i + 1]?.input.focus(); } });
+    return h('div', {}, !isBlank(data.instructions) && richBlock(data.instructions, 'rs-instructions'), body, actions.el);
   },
 };

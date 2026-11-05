@@ -98,6 +98,12 @@ CREATE TABLE IF NOT EXISTS attempts (
 );
 `);
 
+// Migrations for databases created by earlier versions.
+const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name);
+if (!userCols.includes('role')) db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'teacher'");
+if (!userCols.includes('status')) db.exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
+if (!userCols.includes('last_seen')) db.exec('ALTER TABLE users ADD COLUMN last_seen TEXT');
+
 export const newId = (bytes = 12) => crypto.randomBytes(bytes).toString('base64url');
 
 export function cleanupExpired() {

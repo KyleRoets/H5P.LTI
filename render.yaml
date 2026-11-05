@@ -17,5 +17,7 @@ services:
         value: "true"
       - key: DATA_DIR
         value: /data
+      - key: ADMIN_EMAILS        # your email, so you get the Admin view
+        sync: false
       - key: REGISTRATION_CODE   # admins type this when installing into ReachLMS
         generateValue: true

@@ -9,7 +9,7 @@ const TOOL_PORT = 3101;
 const MOCK_PORT = 4101;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'reach-studio-test-'));
 Object.assign(process.env, {
-  DATA_DIR: tmp, PUBLIC_URL: `http://localhost:${TOOL_PORT}`, ALLOW_INSECURE_PLATFORMS: 'true', PORT: String(TOOL_PORT),
+  DATA_DIR: tmp, PUBLIC_URL: `http://localhost:${TOOL_PORT}`, ALLOW_INSECURE_PLATFORMS: 'true', PORT: String(TOOL_PORT), ADMIN_EMAILS: 'taylor@school.test',
 });
 const { createApp } = await import('../src/server.js');
 const { startMockCanvas } = await import('./mock-canvas.js');
@@ -80,7 +80,7 @@ try {
   await step('Dynamic Registration installs the tool into the platform', async () => {
     const q = form({ openid_configuration: `${mock.base}/api/lti/security/openid-configuration`, registration_token: mock.state.regToken });
     const page = await (await fetch(`${TOOL}/lti/register?${q}`)).text();
-    assert.match(page, /Install Reach Studio/);
+    assert.match(page, /Install ReachStudio/);
     const r = await fetch(`${TOOL}/lti/register`, { method: 'POST', body: q });
     const html = await r.text();
     assert.equal(r.status, 200, html);
@@ -92,7 +92,7 @@ try {
     assert.deepEqual(p.redirect_uris, [`${TOOL}/lti/launch`]);
   });
 
-  let teacher; let quizId; let hotspotId;
+  let teacher; let quizId; let hotspotId; let other; let otherId;
   await step('editor_button deep-link launch opens the studio and asks for an account', async () => {
     const l = await launch('dl:editor_button');
     assert.equal(l.status, 200, l.html);
@@ -126,7 +126,7 @@ try {
       { kind: 'choice', text: 'Pick the organelles', options: [{ text: 'Ribosome', correct: true }, { text: 'Golgi', correct: true }, { text: 'Laptop', correct: false }] },
     ] } });
     assert.equal(quiz.status, 200); quizId = quiz.body.id;
-    const hs = await teacher('POST', '/api/contents', { type: 'hotspots', title: 'Cell diagram', data: { image: '/media/x.png', hotspots: [{ x: 10, y: 20, title: 'Nucleus', body: 'Holds DNA' }] } });
+    const hs = await teacher('POST', '/api/contents', { type: 'hotspots', title: 'Cell diagram', data: { image: '/media/x.png', style: { width: 560 }, hotspots: [{ x: 10, y: 20, title: 'Nucleus', body: '<p>Holds <strong>DNA</strong></p>' }] } });
     hotspotId = hs.body.id;
     const badType = await teacher('POST', '/api/contents', { type: 'nope', title: 'x', data: {} });
     assert.equal(badType.status, 400);
@@ -168,7 +168,8 @@ try {
     const item = mock.state.page[0];
     assert.equal(item.type, 'ltiResourceLink');
     assert.equal(item.custom.content_id, hotspotId);
-    assert.ok(item.iframe.width > 0 && item.iframe.height > 0, 'RCE embed has iframe size');
+    assert.equal(item.iframe.width, 560, 'RCE embed uses the author\'s chosen width');
+    assert.equal(item.iframe.height, 392, 'height scales with the width');
     assert.ok(!item.lineItem, 'RCE embeds are not graded');
     assert.ok(mock.state.log.some((m) => m.includes('data=opaque-editor_button')), 'echoes the platform data claim');
   });
@@ -233,12 +234,60 @@ try {
 
   await step('accounts are private: another user cannot see or embed your content', async () => {
     const r = await fetch(`${TOOL}/api/auth/signup`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Other Teacher', email: 'other@school.test', password: 'another password' }) });
-    const other = api((await r.json()).token);
+    const j = await r.json();
+    other = api(j.token); otherId = j.user.id;
+    assert.equal(j.user.role, 'teacher', 'new accounts are teachers');
     assert.equal((await other('GET', `/api/contents/${quizId}`)).status, 404);
     assert.equal((await other('GET', '/api/contents')).body.length, 0);
     assert.equal((await other('POST', '/api/embed', { contentId: quizId })).status, 400, 'no deep-link session');
     const bad = await fetch(`${TOOL}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'taylor@school.test', password: 'wrong' }) });
     assert.equal(bad.status, 401);
+  });
+
+  await step('rich-text answers (<mark>) set the graded assignment\'s maximum score', async () => {
+    const c = await teacher('POST', '/api/contents', { type: 'blanks', title: 'Cell words', data: { html: '<p>The <mark>nucleus</mark> holds <mark>DNA</mark>.</p>' } });
+    const l = await launch('dl:assignment_selection');
+    const t = api(bootToken(l.html));
+    const r = await t('POST', '/api/embed', { contentId: c.body.id });
+    await fetch(r.body.returnUrl, { method: 'POST', body: form({ JWT: r.body.jwt }) });
+    assert.equal(mock.state.assignments.at(-1).lineItem.scoreMaximum, 2);
+  });
+
+  await step('admin view: ADMIN_EMAILS user is an admin; teachers are blocked from admin APIs', async () => {
+    const me = await teacher('GET', '/api/me');
+    assert.equal(me.body.user.role, 'admin');
+    assert.equal((await other('GET', '/api/admin/stats')).status, 403);
+    const stats = await teacher('GET', '/api/admin/stats');
+    assert.equal(stats.status, 200);
+    assert.equal(stats.body.users, 2);
+    assert.ok(stats.body.contents >= 3);
+    assert.equal(stats.body.gradesSent, 2, 'two scores were sent in the student step');
+    const users = await teacher('GET', '/api/admin/users');
+    const row = users.body.find((u) => u.email === 'taylor@school.test');
+    assert.ok(row.contents >= 3); assert.equal(row.linked, 1);
+    const detail = await teacher('GET', `/api/admin/users/${row.id}`);
+    assert.ok(detail.body.contents.some((c) => c.id === quizId));
+    const prev = await teacher('GET', `/api/admin/contents/${quizId}`);
+    assert.equal(prev.body.owner, 'Taylor Teacher');
+  });
+
+  await step('admin can suspend, reactivate, promote and delete accounts (but not their own)', async () => {
+    assert.equal((await teacher('PATCH', `/api/admin/users/${(await teacher('GET', '/api/me')).body.user.id}`, { status: 'suspended' })).status, 400, 'cannot suspend yourself');
+    assert.equal((await teacher('PATCH', `/api/admin/users/${otherId}`, { status: 'suspended' })).body.status, 'suspended');
+    assert.equal((await other('GET', '/api/contents')).status, 401, 'suspended user is signed out');
+    const login = await fetch(`${TOOL}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'other@school.test', password: 'another password' }) });
+    assert.equal(login.status, 403, 'suspended user cannot sign in');
+    await teacher('PATCH', `/api/admin/users/${otherId}`, { status: 'active' });
+    const login2 = await fetch(`${TOOL}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'other@school.test', password: 'another password' }) });
+    assert.equal(login2.status, 200, 'reactivated user can sign in');
+    const o2 = api((await login2.json()).token);
+    const made = await o2('POST', '/api/contents', { type: 'accordion', title: 'FAQ', data: { panels: [{ title: 'Q', body: 'A' }] } });
+    assert.equal((await teacher('PATCH', `/api/admin/users/${otherId}`, { role: 'admin' })).body.role, 'admin');
+    assert.equal((await o2('GET', '/api/admin/stats')).status, 200, 'promoted user sees admin APIs');
+    await teacher('PATCH', `/api/admin/users/${otherId}`, { role: 'teacher' });
+    assert.equal((await teacher('DELETE', `/api/admin/users/${otherId}`)).status, 200);
+    assert.equal((await teacher('GET', `/api/admin/contents/${made.body.id}`)).status, 404, 'their content is deleted too');
+    assert.equal((await teacher('GET', '/api/admin/stats')).body.users, 1);
   });
 
   await step('sign in from a fresh ReachLMS identity links the existing account', async () => {
@@ -247,7 +296,7 @@ try {
     assert.equal((await t('GET', '/api/me')).body.user, null);
     const r = await t('POST', '/api/auth/login', { email: 'taylor@school.test', password: 'correct horse battery' });
     assert.equal(r.status, 200);
-    assert.equal((await t('GET', '/api/contents')).body.length, 2);
+    assert.equal((await t('GET', '/api/contents')).body.length, 3);
   });
 } catch {
   // reported below

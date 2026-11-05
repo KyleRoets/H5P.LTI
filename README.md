@@ -1,8 +1,8 @@
-# Reach Studio
+# ReachStudio by YouMultiply
 
 Interactive content builder for **ReachLMS (Canvas)**, integrated with **LTI 1.3 / LTI Advantage**.
 
-Teachers click the **Reach Studio** button in the ReachLMS Rich Content Editor (RCE). A pop-up opens where they:
+Teachers click the **ReachStudio** button in the ReachLMS Rich Content Editor (RCE). A pop-up opens where they:
 
 1. **Create an account** the first time. The account is linked to their ReachLMS login, so after that the studio opens straight away.
 2. **Build new interactive content** with a visual builder and a live preview.
@@ -22,15 +22,29 @@ These are 10 of the most-used interactive types in H5P/Lumi-style tools, written
 | Type | What learners do | Graded |
 |---|---|---|
 | Presentation | Slides (5 layouts, colours, images) with built-in questions; full-screen and keyboard navigation | ✓ |
-| Image Hotspots | Click numbered markers on an image to reveal text and pictures | – |
+| Image Hotspots | Click markers on an image to reveal text and pictures (8 marker icons, sizes, shapes and colours) | – |
 | Interactive Video | YouTube or uploaded MP4/WebM pauses at set times for questions or info | ✓ |
-| Quiz (Question Set) | Multiple choice, multi-select and true/false; feedback, pass mark, shuffling | ✓ |
+| Quiz | Multiple choice, multi-select and true/false; feedback, pass mark, shuffling | ✓ |
 | Drag and Drop | Drag labels onto zones on an image or board, with distractors | ✓ |
-| Fill in the Blanks | Type missing words; alternative answers (`*colour/color*`) | ✓ |
+| Fill in the Blanks | Type missing words; alternative answers (`colour/color`) | ✓ |
 | Drag the Words | Drag words into gaps; optional extra wrong words | ✓ |
 | Flashcards | Flip cards with optional images | – |
 | Accordion | Expandable sections (FAQs, glossaries) | – |
 | Mark the Words | Click the words that match a rule | ✓ |
+
+Every type has a full description (what it is, what it's good for, what learners do, a tip) and a working example in the "Learn more" panel. New content starts empty; teachers can also start from the example.
+
+**Editing:**
+- **Rich text:** a toolbar with bold, italic, underline and strikethrough, text and highlight colours, lists, alignment and links. Answers for Fill in the Blanks, Drag the Words and Mark the Words are marked with a **Make answer** button.
+- **Appearance tab:** accent, background and text colours, font, text size, corner style and embed width for every item, plus per-item colours (hotspot markers, drop zones, card faces, accordion headings, slide backgrounds).
+- **Undo and redo:** buttons, or Ctrl/Cmd+Z.
+- **Lists:** duplicate, reorder and collapse items.
+- **Live preview:** renders at the real embed width, with tablet and phone sizes, so what you see is exactly what appears in ReachLMS.
+
+**Roles:**
+- **Teacher (default):** their own library and builder.
+- **Admin:** an **Admin** tab with usage statistics, content by type and the connected ReachLMS sites, plus user management: view a user's content, suspend or reactivate, make admin, or delete the account and its content.
+- **Becoming an admin:** list admin emails in `ADMIN_EMAILS`, or run `npm run make-admin -- someone@school.edu`. In demo mode the first account is an admin.
 
 Every player works with mouse, touch and keyboard. Drag interactions also support "click to pick, click to place".
 
@@ -38,10 +52,10 @@ Every player works with mouse, touch and keyboard. Drag interactions also suppor
 
 | Placement (registered automatically) | Message type | What it does in ReachLMS |
 |---|---|---|
-| `editor_button` | Deep Linking | Reach Studio button in the RCE. Inserts an `ltiResourceLink` with an `iframe` size, so content shows inline in pages, assignments, quizzes and discussions |
+| `editor_button` | Deep Linking | ReachStudio button in the RCE. Inserts an `ltiResourceLink` with an `iframe` size, so content shows inline in pages, assignments, quizzes and discussions |
 | `assignment_selection` | Deep Linking | *Assignment → Submission type → External Tool*. Scored content includes a `lineItem`, so ReachLMS creates a graded assignment |
 | `link_selection` | Deep Linking | *Modules → Add item → External Tool* |
-| `course_navigation` | Resource Link | Optional "Reach Studio" course menu link for teachers. **Disabled by default**; teachers enable it in *Settings → Navigation* |
+| `course_navigation` | Resource Link | Optional "ReachStudio" course menu link for teachers. **Disabled by default**; teachers enable it in *Settings → Navigation* |
 
 Standards used:
 - **Login and launch:** OIDC third-party login (`/lti/login`), then signed `id_token` validation (`/lti/launch`). The tool checks the signature against the platform's public keys, plus the issuer, audience, nonce (single use), version and deployment.
@@ -125,8 +139,8 @@ npm run mock-canvas
 ```
 
 Then open <http://localhost:4000>:
-1. Click **Install Reach Studio**.
-2. Use the RCE's **Reach Studio** button to create an account, build something and **Save & insert**.
+1. Click **Install ReachStudio**.
+2. Use the RCE's **ReachStudio** button to create an account, build something and **Save & insert**.
 3. Add a graded assignment, then switch to **Student** to complete it and watch the gradebook update.
 
 ## Tests
@@ -155,9 +169,14 @@ src/sessions.js    Bearer-token sessions (no third-party cookies)
 src/db.js          SQLite schema (node:sqlite)
 src/keys.js        Tool RSA key pair (generated on first start into DATA_DIR)
 src/types.js       Server-side scoring/embed sizes per content type
+src/admin.js       Admin API (stats, users, suspend/reactivate/delete)
+src/demo/          Pretend ReachLMS used by demo mode and tests
 public/js/studio.js        Studio app: account, library, type gallery, builder, insert
 public/js/player-page.js   Player shown to learners inside ReachLMS
-public/js/types/*.js       The 10 content types (editor + player each)
+public/js/types/*.js       The 10 content types (editor, player, description, example)
+public/js/icons.js         Line icon set
+public/js/covers.js        Cover illustrations for each type
+public/js/brand.js         ReachStudio logo (vectorised ReachLMS hand)
 test/mock-canvas.js        Mock ReachLMS/Canvas platform
 test/e2e-lti.test.js       End-to-end test
 ```
@@ -167,10 +186,11 @@ test/e2e-lti.test.js       End-to-end test
 - **Back up `DATA_DIR`.** It holds `studio.db` (accounts and content), `tool-keys.json` (the tool's private signing key, file mode 600) and `media/` (uploads). Losing the key means ReachLMS must re-register the tool.
 - **Passwords** are hashed with bcrypt, and sign-in has basic brute-force throttling.
 - **Uploads:** only PNG, JPG, GIF, WebP, MP4, WebM and MP3 are accepted. They are stored under unguessable random names and served with `nosniff`. Anyone with a media link can view it, which is needed so embedded content loads for students.
-- **Author text** is escaped and only a small formatting syntax is allowed (`**bold**`, `_italic_`, `[link](https://…)`), so content can't inject scripts into ReachLMS pages.
+- **Author text** is rich text passed through an allow-list sanitiser: only formatting tags, safe colours or alignment, and http(s) or mailto links are kept. Content can't inject scripts into ReachLMS pages.
+- **Suspended accounts** are signed out immediately and can't sign in. Their embedded content keeps working for students. Deleting an account removes its content and uploaded files.
 - **Grading model:** scores are calculated in the learner's browser and capped at the activity's maximum on the server. That's fine for formative activities. For high-stakes assessment, use ReachLMS's native quizzes, or add server-side answer checking.
-- **What is graded where:** content inserted with the RCE button is display-only (Canvas doesn't link RCE embeds to the gradebook). Use *Assignment → External Tool → Reach Studio* for graded activities.
+- **What is graded where:** content inserted with the RCE button is display-only (Canvas doesn't link RCE embeds to the gradebook). Use *Assignment → External Tool → ReachStudio* for graded activities.
 - **Quizzes:** the RCE button works where ReachLMS's editor shows LTI editor tools (pages, assignments, discussions, Classic Quiz questions). Support inside New Quizzes depends on your ReachLMS version, so check there first.
 - **Interactive Video:** YouTube videos need the learner's browser to be able to reach youtube.com.
-- **Editing after embedding:** embeds reference content by ID, so editing an item updates it everywhere it is embedded. When the owner views an embed in ReachLMS, they see an **✎ Edit in Reach Studio** button.
+- **Editing after embedding:** embeds reference content by ID, so editing an item updates it everywhere it is embedded. When the owner views an embed in ReachLMS, they see an **✎ Edit in ReachStudio** button.
 - **Scaling:** for multiple server instances, move SQLite and `media/` to shared storage (e.g. Postgres and S3). The in-memory sign-in throttle and token cache are per instance.

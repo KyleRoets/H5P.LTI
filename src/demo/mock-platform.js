@@ -5,6 +5,10 @@
 import express from 'express';
 import { generateKeyPair, exportJWK, SignJWT, jwtVerify, createRemoteJWKSet } from 'jose';
 import crypto from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const LOGO = path.join(path.dirname(fileURLToPath(import.meta.url)), 'reachlms-logo.jpg');
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const USERS = {
@@ -14,7 +18,7 @@ const USERS = {
 
 /**
  * base: the public URL this platform is served at (e.g. https://studio.example.com/demo)
- * toolUrl: the public URL of Reach Studio
+ * toolUrl: the public URL of ReachStudio
  * resolve: maps a public URL to one this server can call directly (server-to-server)
  */
 export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) {
@@ -35,6 +39,8 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
   const app = express();
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json({ type: ['application/json', 'application/vnd.ims.lis.v1.score+json'] }));
+
+  app.get('/logo.jpg', (req, res) => res.sendFile(LOGO));
 
   app.get('/api/lti/security/jwks', (req, res) => res.json({ keys: [pubJwk] }));
 
@@ -180,10 +186,11 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
     const assignments = state.assignments.map((a, i) => `<li><strong>${esc(a.title)}</strong> (${a.lineItem ? `${a.lineItem.scoreMaximum} pts` : 'ungraded'})
         — <button onclick="openModal('${esc(loginUrl(`rl:assign-${i}`))}')">Open</button>
         ${Object.values(a.scores).map((s) => `<span class="score">Gradebook: ${s.scoreGiven}/${s.scoreMaximum}</span>`).join('')}</li>`).join('');
-    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>Mock ReachLMS</title><style>
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>ReachLMS demo course</title><style>
       body{font-family:system-ui,sans-serif;margin:0;background:#f5f5f5;color:#2d3b45}
-      header{background:#1b2a4a;color:#fff;padding:12px 20px;display:flex;gap:16px;align-items:center}
-      header a{color:#fff} main{max-width:1000px;margin:20px auto;background:#fff;padding:20px 28px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
+      header{background:#fff;color:#193B82;padding:10px 20px;display:flex;gap:16px;align-items:center;border-bottom:3px solid #278DDF}
+      header a{color:#193B82} header img{height:40px;display:block} .course{font-weight:700;border-left:1px solid #dde3ec;padding-left:16px}
+      button{font:inherit;cursor:pointer} #install,#new-assignment,.navbtn{background:#278DDF;color:#fff;border:0;border-radius:8px;padding:9px 16px;font-weight:600} .demo-note{background:#E6F2FC;color:#134d80;border-radius:8px;padding:10px 14px;font-size:14px} main{max-width:1000px;margin:20px auto;background:#fff;padding:20px 28px;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.1)}
       .rce{border:1px solid #c7cdd1;border-radius:4px} .rce-bar{border-bottom:1px solid #c7cdd1;padding:6px;display:flex;gap:4px;background:#f5f5f5}
       .rce-bar button{border:1px solid transparent;background:none;padding:4px 8px;border-radius:3px;cursor:pointer;font-size:14px}
       .rce-bar button:hover{border-color:#c7cdd1;background:#fff} .rce-body{padding:12px;min-height:80px}
@@ -192,21 +199,21 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
       #modal .box{background:#fff;width:min(1100px,96vw);height:min(720px,92vh);border-radius:6px;overflow:hidden;display:flex;flex-direction:column}
       #modal .bar{padding:8px 12px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;font-weight:600}
       #modal iframe{flex:1;border:0;width:100%} .muted{color:#6b7780;font-size:14px}</style></head><body>
-      <header><strong>Mock ReachLMS</strong><span>Biology 101</span><span style="flex:1"></span>
+      <header><img src="${base}/logo.jpg" alt="ReachLMS"><span class="course">Biology 101 <span class="muted">(demo course)</span></span><span style="flex:1"></span>
         Viewing as: <a href="${base}/?as=teacher">${role === 'teacher' ? '<b>Teacher</b>' : 'Teacher'}</a> | <a href="${base}/?as=student">${role === 'student' ? '<b>Student</b>' : 'Student'}</a></header>
       <main>
-      ${reg ? `<p class="muted">Reach Studio is installed (client ID ${esc(reg.client_id)}).</p>` : `<p><button id="install" onclick="openModal('${esc(regUrl)}')">Install Reach Studio (Dynamic Registration)</button></p>`}
+      ${reg ? `<p class="muted">ReachStudio is installed (client ID ${esc(reg.client_id)}).</p>` : `<p class="demo-note">This is a pretend ReachLMS course for trying ReachStudio. Start by installing it:</p><p><button id="install" onclick="openModal('${esc(regUrl)}')">Install ReachStudio (Dynamic Registration)</button></p>`}
       <h2>Week 1: Cells</h2>
       ${role === 'teacher' && reg ? `<div class="rce"><div class="rce-bar"><button><b>B</b></button><button><i>I</i></button><button>🔗</button>
-        <button id="rce-tool" title="Reach Studio" onclick="openModal('${esc(loginUrl('dl:editor_button'))}')"><img src="${toolUrl}/img/icon.svg" width="16" height="16" alt=""> Reach Studio</button></div>
-        <div class="rce-body">Welcome to the cells unit! <span class="muted">(Rich Content Editor — use the Reach Studio button to embed content.)</span></div></div>` : ''}
+        <button id="rce-tool" title="ReachStudio" onclick="openModal('${esc(loginUrl('dl:editor_button'))}')"><img src="${toolUrl}/img/icon-64.png" width="16" height="16" alt=""> ReachStudio</button></div>
+        <div class="rce-body">Welcome to the cells unit! <span class="muted">(Rich Content Editor — use the ReachStudio button to embed content.)</span></div></div>` : ''}
       <div id="page">${pageEmbeds || '<p class="muted">No embedded content yet.</p>'}</div>
       <h2>Assignments</h2>
-      ${role === 'teacher' && reg ? `<p><button id="new-assignment" onclick="openModal('${esc(loginUrl('dl:assignment_selection'))}')">+ Assignment → External Tool → Reach Studio</button></p>` : ''}
+      ${role === 'teacher' && reg ? `<p><button id="new-assignment" onclick="openModal('${esc(loginUrl('dl:assignment_selection'))}')">+ Assignment → External Tool → ReachStudio</button></p>` : ''}
       <ul>${assignments || '<li class="muted">None</li>'}</ul>
-      ${role === 'teacher' && reg ? `<p><button onclick="openModal('${esc(loginUrl('nav:course'))}')">Course navigation: Reach Studio</button></p>` : ''}
+      ${role === 'teacher' && reg ? `<p><button class="navbtn" onclick="openModal('${esc(loginUrl('nav:course'))}')">Course navigation: ReachStudio</button></p>` : ''}
       </main>
-      <div id="modal"><div class="box"><div class="bar"><span>Reach Studio</span><button onclick="closeModal()">✕</button></div><iframe id="modal-frame" title="Tool"></iframe></div></div>
+      <div id="modal"><div class="box"><div class="bar"><span>ReachStudio</span><button onclick="closeModal()">✕</button></div><iframe id="modal-frame" title="Tool"></iframe></div></div>
       <script>
         function openModal(u){document.getElementById('modal-frame').src=u;document.getElementById('modal').style.display='grid'}
         function closeModal(){document.getElementById('modal').style.display='none';document.getElementById('modal-frame').src='about:blank'}
