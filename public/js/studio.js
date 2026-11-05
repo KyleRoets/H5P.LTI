@@ -80,8 +80,8 @@ function topbar(active = '') {
       isAdmin() && h('a', { href: '#admin', class: active === 'admin' ? 'on' : '' }, icon('shield', { size: 16 }), h('span', {}, 'Admin'))),
     h('div', { class: 'spacer' }),
     l?.context && h('span', { class: 'ctx' }, icon('book', { size: 14 }), l.context),
-    u && inFrame && h('button', { class: 'btn ghost sm', type: 'button', title: 'Open ReachStudio in a full browser tab', onclick: openInNewTab }, icon('external', { size: 15 }), h('span', { class: 'hide-sm' }, 'Full screen')),
-    u && h('div', { class: 'user-chip' },
+    u && inFrame && h('button', { class: 'btn ghost sm', type: 'button', title: 'Open ReachStudio in a full browser tab', onclick: openInNewTab }, icon('external', { size: 15 }), h('span', { class: 'hide-md' }, 'Full screen')),
+    u && h('div', { class: 'user-chip', title: `${u.name} · ${u.role === 'admin' ? 'Admin' : 'Teacher'}` },
       h('span', { class: 'avatar', 'aria-hidden': 'true' }, initials),
       h('span', { class: 'who' }, h('span', { class: 'n' }, u.name), h('span', { class: 'r' }, u.role === 'admin' ? 'Admin' : 'Teacher')),
       iconBtn('logout', 'Sign out', signOut, { cls: 'on-dark' })));
@@ -439,14 +439,23 @@ function renderBuilder(doc) {
   drawEditor();
   editorPane.append(tabsEl, editorBody);
 
+  // In narrow windows (like the ReachLMS editor pop-up) show Edit and Preview one at a time.
+  let builderEl;
+  const paneToggle = h('div', { class: 'segment pane-toggle', role: 'radiogroup', 'aria-label': 'Show' });
+  const drawToggle = (mode) => {
+    paneToggle.replaceChildren(...[['edit', 'edit', 'Edit'], ['preview', 'eye', 'Preview']].map(([m, ic, label]) =>
+      h('button', { type: 'button', role: 'radio', 'aria-checked': String(mode === m), class: mode === m ? 'on' : '', onclick: () => { builderEl.className = `builder mode-${m}`; drawToggle(m); if (m === 'preview') drawPreview(); } }, icon(ic, { size: 15 }), h('span', {}, label))));
+  };
+  drawToggle('edit');
   app.replaceChildren(topbar('library'), banner() || '',
     h('div', { class: 'builder-bar' },
       h('button', { class: 'btn', type: 'button', onclick: back }, icon('arrow-left', { size: 16 }), h('span', { class: 'hide-sm' }, 'Library')),
       h('span', { class: 'ticon', title: t.name, style: { background: t.color } }, icon(t.icon, { size: 16 })),
       titleInput, folderSel, h('span', { class: 'undo-group' }, undoBtn, redoBtn), dirtyEl,
       h('button', { class: `btn ${canEmbed ? '' : 'primary'}`, type: 'button', onclick: async () => { if (await save()) toast('Saved'); } }, icon('save', { size: 16 }), h('span', {}, 'Save')),
-      canEmbed && h('button', { class: 'btn primary', type: 'button', onclick: async () => { const s = await save(); if (s) embed(s.id); } }, icon('insert', { size: 16 }), h('span', {}, 'Save & insert'))),
-    h('div', { class: 'builder' },
+      canEmbed && h('button', { class: 'btn primary', type: 'button', onclick: async () => { const s = await save(); if (s) embed(s.id); } }, icon('insert', { size: 16 }), h('span', {}, 'Save & insert')),
+      paneToggle),
+    builderEl = h('div', { class: 'builder mode-edit' },
       editorPane,
       h('section', { class: 'preview-pane', 'aria-label': 'Live preview' },
         h('div', { class: 'preview-label' }, h('span', {}, icon('eye', { size: 14 }), 'Live preview — exactly as it will appear'), devHost),

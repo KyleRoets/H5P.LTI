@@ -1,7 +1,7 @@
-import { h, mediaField, listEditor, safeUrl, richField, richBlock, isBlank, checkField, colorField, shuffle, emptyState } from '../util.js';
+import { h, mediaField, listEditor, safeUrl, richField, richBlock, isBlank, checkField, colorField, shuffle, emptyState , htmlToText } from '../util.js';
 import { icon } from '../icons.js';
 
-const plain = (v) => String(v || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+const plain = htmlToText;
 
 export default {
   id: 'cards',

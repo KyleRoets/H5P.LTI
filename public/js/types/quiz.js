@@ -1,10 +1,10 @@
-import { h, textField, selectField, checkField, mediaField, listEditor, optionsEditor, choiceQuestion, feedback, richField, richBlock, isBlank, shuffle, emptyState } from '../util.js';
+import { h, textField, selectField, checkField, mediaField, listEditor, optionsEditor, choiceQuestion, feedback, richField, richBlock, isBlank, shuffle, emptyState , htmlToText } from '../util.js';
 import { icon } from '../icons.js';
 
 const newQ = (kind = 'choice') => (kind === 'truefalse'
   ? { kind, text: '', image: '', options: [{ text: 'True', correct: true }, { text: 'False', correct: false }], feedbackCorrect: '', feedbackWrong: '' }
   : { kind, text: '', image: '', options: [{ text: '', correct: true }, { text: '', correct: false }, { text: '', correct: false }], feedbackCorrect: '', feedbackWrong: '' });
-const plain = (v) => String(v || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+const plain = htmlToText;
 
 export default {
   id: 'quiz',

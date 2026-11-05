@@ -90,12 +90,19 @@ function legacyToHtml(src) {
     return `<p>${s.replace(/\n/g, '<br>')}</p>`;
   }).join('');
 }
-const looksHtml = (v) => /<\/?[a-z][\s\S]*>/i.test(String(v || ''));
+// Rich text from the editor is HTML; it may contain only entities (e.g. "What?&nbsp;") and no tags.
+const looksHtml = (v) => /<\/?[a-z][\s\S]*>|&(#\d+|#x[0-9a-f]+|[a-z]+);/i.test(String(v || ''));
 
 /** Safe HTML for any stored rich-text value (new HTML or legacy plain text). */
 export const richHtml = (v) => sanitizeHtml(looksHtml(v) ? v : legacyToHtml(v));
 export const richBlock = (v, cls = '') => h('div', { class: `rs-text ${cls}`, html: richHtml(v) });
-export const isBlank = (v) => !String(v || '').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+/** Plain text of a rich value (tags removed, entities decoded), e.g. for list labels. */
+export function htmlToText(v) {
+  const d = document.createElement('div');
+  d.innerHTML = richHtml(v);
+  return d.textContent.replace(/\s+/g, ' ').trim();
+}
+export const isBlank = (v) => !htmlToText(v);
 
 /** Legacy "*answer*" plain-text syntax → HTML with <mark> answers. */
 export function answersHtml(data) {

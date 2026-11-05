@@ -5,7 +5,7 @@
 const marks = (d) => (d.html !== undefined
   ? (String(d.html).match(/<mark[\s>]/gi) || []).length
   : (String(d.text || '').match(/\*[^*\n]+\*/g) || []).length);
-const plain = (v) => String(v || '').replace(/<[^>]*>/g, '').trim();
+const plain = (v) => String(v || '').replace(/<[^>]*>/g, '').replace(/&(nbsp|#160);/gi, ' ').trim();
 const questions = (list = []) => list.filter((q) => q && Array.isArray(q.options) && q.options.some((o) => o.correct)).length;
 
 export const TYPES = {
