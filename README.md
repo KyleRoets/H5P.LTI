@@ -17,20 +17,56 @@ Students see the content embedded inline. Scored content can also be added as a 
 
 ## Content types
 
-These are 10 of the most-used interactive types in H5P/Lumi-style tools, written as original code with no H5P dependency.
+29 interactive types covering what H5P and Lumi offer, written as original code with no H5P dependency. The "Create new" gallery groups them into four categories and has a search box. "Graded" types send a score to the ReachLMS gradebook when added as an assignment.
+
+**Questions & quizzes**
+
+| Type | What learners do | Graded |
+|---|---|---|
+| Quiz | Multiple choice, multi-select and true/false; feedback, pass mark, shuffling | ✓ |
+| Fill in the Blanks | Type missing words; alternative answers (`colour/color`) | ✓ |
+| Drag and Drop | Drag labels onto zones on an image or board, with distractors | ✓ |
+| Drag the Words | Drag words into gaps; optional extra wrong words | ✓ |
+| Mark the Words | Click the words that match a rule | ✓ |
+| Find the Hotspot | Click the right area(s) of an image | ✓ |
+| Put in Order | Put items (text or images) in the right order | ✓ |
+| Matching Pairs | Match each item on the left with one on the right | ✓ |
+| Summary | Pick the correct statement from each set to build a summary | ✓ |
+| Essay | Write an answer; scored on keywords, with a model answer shown | ✓ |
+| Dictation | Listen (audio or text-to-speech) and type what you hear | ✓ |
+| Arithmetic Quiz | Timed sums: +, −, ×, ÷ or mixed | ✓ |
+
+**Lessons & stories**
 
 | Type | What learners do | Graded |
 |---|---|---|
 | Presentation | Slides (5 layouts, colours, images) with built-in questions; full-screen and keyboard navigation | ✓ |
-| Image Hotspots | Click markers on an image to reveal text and pictures (8 marker icons, sizes, shapes and colours) | – |
+| Interactive Book | Chapters of text, images and any other activity, with progress and a total score | ✓ |
+| Branching Scenario | Choose a path through scenes to one of several endings, optionally scored | ✓ |
 | Interactive Video | YouTube or uploaded MP4/WebM pauses at set times for questions or info | ✓ |
-| Quiz | Multiple choice, multi-select and true/false; feedback, pass mark, shuffling | ✓ |
-| Drag and Drop | Drag labels onto zones on an image or board, with distractors | ✓ |
-| Fill in the Blanks | Type missing words; alternative answers (`colour/color`) | ✓ |
-| Drag the Words | Drag words into gaps; optional extra wrong words | ✓ |
-| Flashcards | Flip cards with optional images | – |
+| Timeline | Scroll through dated events with images | – |
 | Accordion | Expandable sections (FAQs, glossaries) | – |
-| Mark the Words | Click the words that match a rule | ✓ |
+
+**Images & media**
+
+| Type | What learners do | Graded |
+|---|---|---|
+| Image Hotspots | Click markers on an image to reveal text and pictures (8 marker icons, sizes, shapes and colours) | – |
+| Image Slider | Step through a captioned image carousel | – |
+| Before and After | Drag a handle to compare two images | – |
+| Collage | Several images in a chosen grid layout | – |
+| Chart | Bar, horizontal bar, pie or doughnut chart | – |
+| Guess the Answer | Look at an image, think, then reveal the answer | – |
+
+**Games & practice**
+
+| Type | What learners do | Graded |
+|---|---|---|
+| Memory Game | Flip cards to find matching pairs | – |
+| Crossword | Solve a generated crossword from clues | ✓ |
+| Word Search | Find hidden words in a letter grid | ✓ |
+| Flashcards | Flip cards with optional images | – |
+| Personality Quiz | Answers lead to one of several results | – |
 
 Every type has a full description (what it is, what it's good for, what learners do, a tip) and a working example in the "Learn more" panel. New content starts empty; teachers can also start from the example.
 
@@ -178,7 +214,7 @@ src/admin.js       Admin API (stats, users, suspend/reactivate/delete)
 src/demo/          Pretend ReachLMS used by demo mode and tests
 public/js/studio.js        Studio app: account, library, type gallery, builder, insert
 public/js/player-page.js   Player shown to learners inside ReachLMS
-public/js/types/*.js       The 10 content types (editor, player, description, example)
+public/js/types/*.js       The 29 content types (editor, player, description, example)
 public/js/icons.js         Line icon set
 public/js/covers.js        Cover illustrations for each type
 public/js/brand.js         ReachStudio logo (vectorised ReachLMS hand)

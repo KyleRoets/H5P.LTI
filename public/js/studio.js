@@ -3,7 +3,7 @@ import { h, makeApi, toast, modal, textField, iconBtn, styleEditor, scaledStage,
 import { icon } from './icons.js';
 import { logo } from './brand.js';
 import { coverSvg } from './covers.js';
-import { TYPES, TYPE_LIST, renderContent } from './types/index.js';
+import { TYPES, TYPE_LIST, CATEGORIES, renderContent } from './types/index.js';
 
 const BOOT = window.BOOT || {};
 const store = {
@@ -393,19 +393,35 @@ async function preview(id) {
 }
 
 // ---------------- type gallery ----------------
+let galleryFilter = { cat: 'all', q: '' };
 function renderGallery() {
+  const typeCard = (t) => h('article', { class: 'type-card' },
+    h('button', { class: 'type-cover', type: 'button', 'aria-label': `Learn more about ${t.name}`, onclick: () => learnMore(t) }, coverEl(t.id)),
+    h('div', { class: 'type-body' },
+      h('h4', {}, h('span', { class: 'ticon', style: { background: t.color } }, icon(t.icon, { size: 16 })), t.name),
+      h('p', {}, t.tagline),
+      h('div', { class: 'badges' }, t.graded ? h('span', { class: 'badge graded' }, icon('award', { size: 13 }), 'Can be graded') : h('span', { class: 'badge' }, icon('book', { size: 13 }), 'Not graded'))),
+    h('div', { class: 'type-actions' },
+      h('button', { class: 'btn primary sm', type: 'button', onclick: () => go(`#new/${t.id}`) }, icon('plus', { size: 15 }), h('span', {}, 'Create')),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => learnMore(t) }, icon('info', { size: 15 }), h('span', {}, 'Learn more'))));
+  const results = h('div');
+  const draw = () => {
+    const q = galleryFilter.q.trim().toLowerCase();
+    const match = (t) => !q || [t.name, t.tagline, t.about.summary, ...t.about.uses].join(' ').toLowerCase().includes(q);
+    const cats = CATEGORIES.filter((c) => galleryFilter.cat === 'all' || c.id === galleryFilter.cat);
+    const sections = cats.map((c) => { const ts = TYPE_LIST.filter((t) => t.category === c.id && match(t)); return ts.length ? h('section', { class: 'type-section' }, h('div', { class: 'type-section-head' }, h('h3', {}, icon(c.icon, { size: 18 }), c.name), h('p', {}, c.blurb)), h('div', { class: 'type-grid' }, ts.map(typeCard))) : null; }).filter(Boolean);
+    results.replaceChildren(...(sections.length ? sections : [h('div', { class: 'empty' }, h('h3', {}, 'No content types match'), h('p', {}, 'Try a different word, or show all categories.'))]));
+    chips.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.cat === galleryFilter.cat));
+  };
+  const chips = h('div', { class: 'cat-chips', role: 'tablist', 'aria-label': 'Categories' },
+    [['all', `All (${TYPE_LIST.length})`], ...CATEGORIES.map((c) => [c.id, `${c.name} (${TYPE_LIST.filter((t) => t.category === c.id).length})`])].map(([id, label]) =>
+      h('button', { type: 'button', role: 'tab', 'data-cat': id, onclick: () => { galleryFilter.cat = id; draw(); } }, label)));
+  const search = h('div', { class: 'search' }, icon('search', { size: 16 }), h('input', { type: 'search', placeholder: 'Search content types…', value: galleryFilter.q, 'aria-label': 'Search content types', oninput: (e) => { galleryFilter.q = e.target.value; draw(); } }));
   app.replaceChildren(topbar('library'), banner() || '', h('section', { class: 'main gallery' },
-    h('div', { class: 'main-head' }, h('button', { class: 'btn', type: 'button', onclick: () => go('#') }, icon('arrow-left', { size: 16 }), h('span', {}, 'Library')), h('h2', {}, 'What would you like to create?')),
-    h('p', { class: 'lead' }, 'Pick a content type. Not sure which one? Open "Learn more" to read what it does and try a working example.'),
-    h('div', { class: 'type-grid' }, TYPE_LIST.map((t) => h('article', { class: 'type-card' },
-      h('button', { class: 'type-cover', type: 'button', 'aria-label': `Learn more about ${t.name}`, onclick: () => learnMore(t) }, coverEl(t.id)),
-      h('div', { class: 'type-body' },
-        h('h4', {}, h('span', { class: 'ticon', style: { background: t.color } }, icon(t.icon, { size: 16 })), t.name),
-        h('p', {}, t.tagline),
-        h('div', { class: 'badges' }, t.graded ? h('span', { class: 'badge graded' }, icon('award', { size: 13 }), 'Can be graded') : h('span', { class: 'badge' }, icon('book', { size: 13 }), 'Not graded'))),
-      h('div', { class: 'type-actions' },
-        h('button', { class: 'btn primary sm', type: 'button', onclick: () => go(`#new/${t.id}`) }, icon('plus', { size: 15 }), h('span', {}, 'Create')),
-        h('button', { class: 'btn sm', type: 'button', onclick: () => learnMore(t) }, icon('info', { size: 15 }), h('span', {}, 'Learn more'))))))));
+    h('div', { class: 'main-head' }, h('button', { class: 'btn', type: 'button', onclick: () => go('#') }, icon('arrow-left', { size: 16 }), h('span', {}, 'Library')), h('h2', {}, 'What would you like to create?'), search),
+    h('p', { class: 'lead' }, `${TYPE_LIST.length} content types. Not sure which one? Open "Learn more" to read what it does and try a working example.`),
+    chips, results));
+  draw();
 }
 
 function learnMore(t) {

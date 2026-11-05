@@ -253,9 +253,9 @@ export function mediaField(label, obj, key, onChange, ctx, opts = {}) {
       try { const r = await ctx.api.upload(f); obj[key] = r.url; onChange(); draw(); } catch (err) { toast(err.message, 'error'); up.disabled = false; up.lastChild.textContent = 'Upload'; }
     } });
     const up = h('button', { class: 'btn sm', type: 'button', onclick: () => file.click() }, icon('upload', { size: 15 }), h('span', {}, url ? 'Replace' : 'Upload'));
-    if (url) wrap.append(h('div', { class: 'media-thumb' }, opts.video && !/youtu/.test(url) ? h('video', { src: url, controls: true, preload: 'metadata' }) : opts.video ? h('div', { class: 'yt-thumb' }, icon('type-video', { size: 28 }), 'YouTube video') : h('img', { src: url, alt: '' })));
-    else wrap.append(h('button', { type: 'button', class: 'media-drop', onclick: () => file.click() }, icon(opts.video ? 'type-video' : 'image', { size: 26 }), h('span', {}, opts.video ? 'Upload a video or paste a YouTube link' : 'Click to upload an image')));
-    const urlInput = h('input', { type: 'url', placeholder: opts.video ? 'or paste a YouTube / MP4 link…' : 'or paste an image link…', value: obj[key] && !obj[key].startsWith('/media/') ? obj[key] : '',
+    if (url) wrap.append(h('div', { class: 'media-thumb' }, opts.audio ? h('audio', { src: url, controls: true, preload: 'none' }) : opts.video && !/youtu/.test(url) ? h('video', { src: url, controls: true, preload: 'metadata' }) : opts.video ? h('div', { class: 'yt-thumb' }, icon('type-video', { size: 28 }), 'YouTube video') : h('img', { src: url, alt: '' })));
+    else wrap.append(h('button', { type: 'button', class: 'media-drop', onclick: () => file.click() }, icon(opts.audio ? 'type-dictation' : opts.video ? 'type-video' : 'image', { size: 26 }), h('span', {}, opts.audio ? 'Click to upload an MP3 recording' : opts.video ? 'Upload a video or paste a YouTube link' : 'Click to upload an image')));
+    const urlInput = h('input', { type: 'url', placeholder: opts.audio ? 'or paste an MP3 link…' : opts.video ? 'or paste a YouTube / MP4 link…' : 'or paste an image link…', value: obj[key] && !obj[key].startsWith('/media/') ? obj[key] : '',
       onchange: (e) => { obj[key] = e.target.value.trim(); onChange(); draw(); } });
     wrap.append(h('div', { class: 'row' }, urlInput, up, file, obj[key] && iconBtn('trash', 'Remove', () => { obj[key] = ''; onChange(); draw(); })));
   };
