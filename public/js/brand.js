@@ -20,12 +20,13 @@ export function handMark(color = '#278DDF', height = 32) {
 }
 
 /**
- * Logo lockup. variant 'light' = for light backgrounds (navy + sky), 'dark' = on navy (white + sky).
+ * Logo lockup. variant 'light' = for light backgrounds (navy + sky), 'dark' = on navy (white + sky),
+ * 'white' = all white (the studio top bar).
  * size: 'sm' (top bar) | 'lg' (sign-in screen)
  */
 export function logo({ variant = 'light', size = 'sm' } = {}) {
   return h('span', { class: `logo logo-${variant} logo-${size}`, role: 'img', 'aria-label': 'ReachStudio by YouMultiply' },
-    handMark(variant === 'dark' ? '#5fb0f0' : '#278DDF', size === 'lg' ? 64 : 30),
+    handMark({ dark: '#5fb0f0', white: '#ffffff' }[variant] || '#278DDF', size === 'lg' ? 64 : 30),
     h('span', { class: 'logo-text' },
       h('span', { class: 'logo-word' }, h('span', { class: 'logo-reach' }, 'Reach'), h('span', { class: 'logo-studio' }, 'Studio')),
       h('span', { class: 'logo-by' }, 'by YouMultiply')));

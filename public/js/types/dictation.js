@@ -21,11 +21,38 @@ function align(target, typed) {
   return { matches: dp[0][0], parts: out };
 }
 
+// Voices load asynchronously in some browsers; warm the list up early.
+if ('speechSynthesis' in window) { speechSynthesis.getVoices(); speechSynthesis.addEventListener?.('voiceschanged', () => speechSynthesis.getVoices()); }
+
+// Pick the most natural-sounding voice the device has for the language. Neural/"natural"
+// voices (Edge, Windows 11, Chrome's Google voices, Apple's enhanced/premium voices) sound far
+// better than the robotic defaults, so they are preferred.
+const GOOD = [/natural/i, /neural/i, /premium/i, /enhanced/i, /^google/i, /siri/i,
+  /\b(sonia|libby|ryan|aria|jenny|guy|emma|brian|ava|andrew|serena|daniel|kate|oliver|samantha|karen|moira|tessa|martha|arthur)\b/i];
+const BAD = [/compact/i, /espeak/i, /\b(albert|bad news|bahh|bells|boing|bubbles|cellos|good news|jester|organ|superstar|trinoids|whisper|wobble|zarvox|fred|junior|ralph|kathy)\b/i];
+export function bestVoice(lang = 'en-GB') {
+  if (!('speechSynthesis' in window)) return null;
+  const voices = speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  const want = lang.toLowerCase(); const base = want.split('-')[0];
+  const score = (v) => {
+    const l = (v.lang || '').toLowerCase().replace('_', '-');
+    let s = l === want ? 100 : l.split('-')[0] === base ? 60 : -1000;
+    GOOD.forEach((r, i) => { if (r.test(v.name)) s += 40 - i * 2; });
+    if (BAD.some((r) => r.test(v.name))) s -= 80;
+    if (!v.localService) s += 5; // online voices are usually the higher-quality ones
+    return s;
+  };
+  return voices.slice().sort((a, b) => score(b) - score(a))[0];
+}
+
 function speak(text, lang, slow) {
   if (!('speechSynthesis' in window)) return false;
   speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang || 'en-GB'; u.rate = slow ? 0.6 : 0.95;
+  u.lang = lang || 'en-GB';
+  const v = bestVoice(u.lang); if (v) u.voice = v;
+  u.rate = slow ? 0.7 : 0.95; u.pitch = 1;
   speechSynthesis.speak(u);
   return true;
 }

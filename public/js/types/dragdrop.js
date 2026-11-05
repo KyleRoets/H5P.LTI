@@ -99,8 +99,8 @@ export default {
     const bank = h('div', { class: 'rs-bank', 'data-drop': 'bank', tabindex: '0', 'aria-label': 'Labels' });
     const items = shuffle(data.items.filter((i) => i.text?.trim())).map((it) => { const el = h('span', { class: 'rs-drag', tabindex: '0', role: 'button' }, it.text); el._it = it; return el; });
     const scorable = data.items.filter((i) => i.zoneId && i.text?.trim()).length;
-    const reset = () => { delete root.dataset.locked; items.forEach((el) => { el.classList.remove('correct', 'wrong'); bank.append(el); }); actions.reset(); };
-    dragSystem(root, { onDrop: (el, target) => target.append(el) });
+    const ds = dragSystem(root, { onDrop: (el, target) => target.append(el) });
+    const reset = () => { delete root.dataset.locked; ds.animate(() => items.forEach((el) => { el.classList.remove('correct', 'wrong'); bank.append(el); })); actions.reset(); };
     const actions = actionRow({
       onCheck: () => {
         root.dataset.locked = '1';
@@ -117,11 +117,11 @@ export default {
         ctx.report?.(score, scorable);
       },
       onRetry: reset,
-      onShow: () => items.forEach((el) => {
+      onShow: () => ds.animate(() => items.forEach((el) => {
         const zi = data.zones.findIndex((z) => z.id === el._it.zoneId);
         el.classList.remove('wrong'); el.classList.add(zi >= 0 ? 'correct' : 'wrong');
         (zi >= 0 ? zoneEls[zi] : bank).append(el);
-      }),
+      })),
     });
     bank.append(...items);
     root.append(...[!isBlank(data.instructions) && richBlock(data.instructions, 'rs-instructions'), board, bank, actions.el].filter(Boolean));

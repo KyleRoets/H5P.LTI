@@ -266,9 +266,9 @@ try {
     const row = users.body.find((u) => u.email === 'taylor@school.test');
     assert.ok(row.contents >= 3); assert.equal(row.linked, 1);
     const detail = await teacher('GET', `/api/admin/users/${row.id}`);
-    assert.ok(detail.body.contents.some((c) => c.id === quizId));
-    const prev = await teacher('GET', `/api/admin/contents/${quizId}`);
-    assert.equal(prev.body.owner, 'Taylor Teacher');
+    assert.ok(detail.body.byType.some((r) => r.type === 'quiz'), 'usage by type');
+    assert.equal(detail.body.contents, undefined, 'admins see usage, not other users\' content');
+    assert.equal((await teacher('GET', `/api/admin/contents/${quizId}`)).status, 404, 'no admin content viewer');
   });
 
   await step('admin can suspend, reactivate, promote and delete accounts (but not their own)', async () => {
@@ -282,11 +282,12 @@ try {
     assert.equal(login2.status, 200, 'reactivated user can sign in');
     const o2 = api((await login2.json()).token);
     const made = await o2('POST', '/api/contents', { type: 'accordion', title: 'FAQ', data: { panels: [{ title: 'Q', body: 'A' }] } });
+    const stats0 = (await teacher('GET', '/api/admin/stats')).body;
     assert.equal((await teacher('PATCH', `/api/admin/users/${otherId}`, { role: 'admin' })).body.role, 'admin');
     assert.equal((await o2('GET', '/api/admin/stats')).status, 200, 'promoted user sees admin APIs');
     await teacher('PATCH', `/api/admin/users/${otherId}`, { role: 'teacher' });
     assert.equal((await teacher('DELETE', `/api/admin/users/${otherId}`)).status, 200);
-    assert.equal((await teacher('GET', `/api/admin/contents/${made.body.id}`)).status, 404, 'their content is deleted too');
+    assert.equal((await teacher('GET', '/api/admin/stats')).body.contents, stats0.contents - 1, 'their content is deleted too');
     assert.equal((await teacher('GET', '/api/admin/stats')).body.users, 1);
   });
 

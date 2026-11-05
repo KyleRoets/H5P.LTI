@@ -51,7 +51,7 @@ export default {
     const bank = h('div', { class: 'rs-bank', 'data-drop': 'bank', tabindex: '0', 'aria-label': 'Partners' });
     const chips = shuffle(pairs).map((p) => { const el = h('span', { class: 'rs-drag rs-match-b', tabindex: '0', role: 'button' }, face(p.b)); el._id = p.id; return el; });
     bank.append(...chips);
-    dragSystem(root, { onDrop: (el, target) => { if (target.classList.contains('rs-match-slot')) { const prev = target.querySelector('.rs-drag'); if (prev && prev !== el) bank.append(prev); } target.append(el); } });
+    const ds = dragSystem(root, { onDrop: (el, target) => { if (target.classList.contains('rs-match-slot')) { const prev = target.querySelector('.rs-drag'); if (prev && prev !== el) bank.append(prev); } target.append(el); } });
     const actions = actionRow({
       onCheck: () => {
         root.dataset.locked = '1';
@@ -59,8 +59,8 @@ export default {
         chips.forEach((el) => { const slot = el.parentElement; if (!slot.classList.contains('rs-match-slot')) return; const ok = slot.dataset.drop === el._id; el.classList.add(ok ? 'correct' : 'wrong'); if (ok) score++; });
         actions.checked(score, pairs.length); ctx.report?.(score, pairs.length);
       },
-      onRetry: () => { delete root.dataset.locked; chips.forEach((el) => { if (el.classList.contains('wrong')) bank.append(el); el.classList.remove('correct', 'wrong'); }); actions.reset(); },
-      onShow: () => chips.forEach((el) => { root.querySelector(`.rs-match-slot[data-drop="${CSS.escape(el._id)}"]`).append(el); el.classList.remove('wrong'); el.classList.add('correct'); }),
+      onRetry: () => { delete root.dataset.locked; ds.animate(() => chips.forEach((el) => { if (el.classList.contains('wrong')) bank.append(el); el.classList.remove('correct', 'wrong'); })); actions.reset(); },
+      onShow: () => ds.animate(() => chips.forEach((el) => { root.querySelector(`.rs-match-slot[data-drop="${CSS.escape(el._id)}"]`).append(el); el.classList.remove('wrong'); el.classList.add('correct'); })),
     });
     root.append(...[!isBlank(data.task) && richBlock(data.task, 'rs-instructions rs-task'), h('div', { class: 'rs-match-rows' }, rows), bank, actions.el].filter(Boolean));
     return root;

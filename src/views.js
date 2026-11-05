@@ -42,7 +42,9 @@ export const views = {
   },
 
   message(title, html) {
-    return shell(title, `<div class="center-card">${brand}<h1>${esc(title)}</h1><p>${html}</p></div>`);
+    // The logo already names the tool, so the home page skips a repeated heading.
+    const heading = title === config.toolName ? '' : `<h1>${esc(title)}</h1>`;
+    return shell(title, `<div class="center-card">${brand}${heading}<p>${html}</p></div>`);
   },
 
   register(oc, rt, needsCode, error = '') {

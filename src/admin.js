@@ -48,16 +48,8 @@ adminRouter.get('/api/admin/users', (req, res) => {
 adminRouter.get('/api/admin/users/:id', (req, res) => {
   const user = db.prepare(`${USER_SQL} WHERE u.id = ?`).get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found.' });
-  const contents = db.prepare('SELECT id, type, title, created_at, updated_at FROM contents WHERE user_id = ? ORDER BY updated_at DESC').all(req.params.id);
   const byType = db.prepare('SELECT type, COUNT(*) n FROM contents WHERE user_id = ? GROUP BY type ORDER BY n DESC').all(req.params.id);
-  res.json({ user, contents, byType });
-});
-
-// Read-only view of any content item (for previews from the admin dashboard).
-adminRouter.get('/api/admin/contents/:id', (req, res) => {
-  const c = db.prepare('SELECT c.*, u.name AS owner FROM contents c JOIN users u ON u.id = c.user_id WHERE c.id = ?').get(req.params.id);
-  if (!c) return res.status(404).json({ error: 'Content not found.' });
-  res.json({ id: c.id, type: c.type, title: c.title, owner: c.owner, updatedAt: c.updated_at, data: JSON.parse(c.data) });
+  res.json({ user, byType });
 });
 
 adminRouter.patch('/api/admin/users/:id', (req, res) => {

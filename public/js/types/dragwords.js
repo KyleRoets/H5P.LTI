@@ -43,7 +43,7 @@ export default {
     const bank = h('div', { class: 'rs-bank', 'data-drop': 'bank', tabindex: '0', 'aria-label': 'Word bank' });
     const words = shuffle([...slots.map((s) => s._answer), ...extra]).map((w) => { const el = h('span', { class: 'rs-drag', tabindex: '0', role: 'button' }, w); el._w = w; return el; });
     bank.append(...words);
-    dragSystem(root, {
+    const ds = dragSystem(root, {
       onDrop: (el, target) => {
         if (target.classList.contains('rs-slot')) { const prev = target.querySelector('.rs-drag'); if (prev && prev !== el) bank.append(prev); }
         target.append(el);
@@ -64,15 +64,15 @@ export default {
       },
       onRetry: () => {
         delete root.dataset.locked;
-        slots.forEach((s) => { const el = s.querySelector('.rs-drag'); if (el?.classList.contains('wrong')) bank.append(el); });
+        ds.animate(() => slots.forEach((s) => { const el = s.querySelector('.rs-drag'); if (el?.classList.contains('wrong')) bank.append(el); }));
         words.forEach((el) => el.classList.remove('wrong', 'correct'));
         actions.reset();
       },
-      onShow: () => {
+      onShow: () => ds.animate(() => {
         words.forEach((el) => { el.classList.remove('wrong'); bank.append(el); });
         const pool = [...words];
         slots.forEach((s) => { const i = pool.findIndex((el) => el._w === s._answer); if (i >= 0) { const [el] = pool.splice(i, 1); el.classList.add('correct'); s.append(el); } });
-      },
+      }),
     });
     root.append(...[!isBlank(data.instructions) && richBlock(data.instructions, 'rs-instructions'), body, h('div', { class: 'rs-bank-wrap' }, bank), actions.el].filter(Boolean));
     return root;

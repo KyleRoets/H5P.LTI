@@ -74,7 +74,7 @@ function topbar(active = '') {
   const l = state.me?.lti;
   const initials = (u?.name || '?').split(/\s+/).map((s) => s[0]).slice(0, 2).join('').toUpperCase();
   return h('header', { class: 'topbar' },
-    h('a', { class: 'brand', href: '#', 'aria-label': 'ReachStudio home' }, logo({ variant: 'dark' })),
+    h('a', { class: 'brand', href: '#', 'aria-label': 'ReachStudio home' }, logo({ variant: 'white' })),
     u && h('nav', { class: 'tabs-nav', 'aria-label': 'Sections' },
       h('a', { href: '#', class: active === 'library' ? 'on' : '' }, icon('library', { size: 16 }), h('span', {}, 'My content')),
       isAdmin() && h('a', { href: '#admin', class: active === 'admin' ? 'on' : '' }, icon('shield', { size: 16 }), h('span', {}, 'Admin'))),
@@ -287,12 +287,33 @@ function navItem(ic, label, id, count, folder) {
     folder && h('span', { class: 'folder-actions' }, iconBtn('edit', `Rename ${label}`, () => renameFolder(folder)), iconBtn('trash', `Delete ${label}`, () => deleteFolder(folder))));
 }
 
+// ---------- live thumbnails: a miniature of the real content on each library card ----------
+const thumbData = new Map(); // id -> { updatedAt, data }
+const thumbIo = new IntersectionObserver((entries) => entries.forEach((en) => { if (en.isIntersecting) { thumbIo.unobserve(en.target); en.target._load?.(); } }), { rootMargin: '200px' });
+function thumbEl(c) {
+  const el = h('div', { class: 'cover thumb loading-thumb' });
+  el._load = async () => {
+    let d = thumbData.get(c.id);
+    if (!d || d.updatedAt !== c.updatedAt) {
+      try { const full = await api.get(`/api/contents/${c.id}`); d = { updatedAt: c.updatedAt, data: full.data }; thumbData.set(c.id, d); } catch { el.replaceWith(coverEl(c.type)); return; }
+    }
+    const width = [560, 800, 1000].includes(Number(d.data?.style?.width)) ? Number(d.data.style.width) : 800;
+    const inner = h('div', { class: 'thumb-inner', inert: '', 'aria-hidden': 'true', style: { width: `${width}px` } });
+    try { inner.append(renderContent(c.type, clone(d.data), { thumbnail: true })); } catch { el.replaceWith(coverEl(c.type)); return; }
+    const fit = () => { if (el.clientWidth) inner.style.transform = `scale(${el.clientWidth / width})`; };
+    new ResizeObserver(fit).observe(el);
+    el.classList.remove('loading-thumb'); el.replaceChildren(inner); fit();
+  };
+  thumbIo.observe(el);
+  return el;
+}
+
 function card(c) {
   const t = TYPES[c.type] || { name: c.type, icon: 'help', color: '#888' };
   const canEmbed = state.me.lti?.canEmbed;
   const folder = state.folders.find((f) => f.id === c.folderId);
   return h('article', { class: 'card' },
-    h('button', { class: 'card-cover', type: 'button', 'aria-label': `Preview ${c.title}`, onclick: () => preview(c.id) }, coverEl(c.type), typeChip(t)),
+    h('button', { class: 'card-cover', type: 'button', 'aria-label': `Preview ${c.title}`, onclick: () => preview(c.id) }, thumbEl(c), typeChip(t)),
     h('div', { class: 'body' }, h('h4', { class: 'title' }, c.title),
       h('div', { class: 'meta' }, icon('clock', { size: 13 }), `Updated ${timeAgo(c.updatedAt)}`, folder && h('span', { class: 'meta-folder' }, icon('folder', { size: 13 }), folder.name))),
     h('div', { class: 'actions' },
@@ -393,7 +414,7 @@ async function preview(id) {
 }
 
 // ---------------- type gallery ----------------
-let galleryFilter = { cat: 'all', q: '' };
+let galleryFilter = { q: '' };
 function renderGallery() {
   const typeCard = (t) => h('article', { class: 'type-card' },
     h('button', { class: 'type-cover', type: 'button', 'aria-label': `Learn more about ${t.name}`, onclick: () => learnMore(t) }, coverEl(t.id)),
@@ -408,19 +429,14 @@ function renderGallery() {
   const draw = () => {
     const q = galleryFilter.q.trim().toLowerCase();
     const match = (t) => !q || [t.name, t.tagline, t.about.summary, ...t.about.uses].join(' ').toLowerCase().includes(q);
-    const cats = CATEGORIES.filter((c) => galleryFilter.cat === 'all' || c.id === galleryFilter.cat);
-    const sections = cats.map((c) => { const ts = TYPE_LIST.filter((t) => t.category === c.id && match(t)); return ts.length ? h('section', { class: 'type-section' }, h('div', { class: 'type-section-head' }, h('h3', {}, icon(c.icon, { size: 18 }), c.name), h('p', {}, c.blurb)), h('div', { class: 'type-grid' }, ts.map(typeCard))) : null; }).filter(Boolean);
-    results.replaceChildren(...(sections.length ? sections : [h('div', { class: 'empty' }, h('h3', {}, 'No content types match'), h('p', {}, 'Try a different word, or show all categories.'))]));
-    chips.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.cat === galleryFilter.cat));
+    const sections = CATEGORIES.map((c) => { const ts = TYPE_LIST.filter((t) => t.category === c.id && match(t)); return ts.length ? h('section', { class: 'type-section' }, h('div', { class: 'type-section-head' }, h('h3', {}, icon(c.icon, { size: 18 }), c.name)), h('div', { class: 'type-grid' }, ts.map(typeCard))) : null; }).filter(Boolean);
+    results.replaceChildren(...(sections.length ? sections : [h('div', { class: 'empty' }, h('h3', {}, 'No content types match'), h('p', {}, 'Try a different word.'))]));
   };
-  const chips = h('div', { class: 'cat-chips', role: 'tablist', 'aria-label': 'Categories' },
-    [['all', `All (${TYPE_LIST.length})`], ...CATEGORIES.map((c) => [c.id, `${c.name} (${TYPE_LIST.filter((t) => t.category === c.id).length})`])].map(([id, label]) =>
-      h('button', { type: 'button', role: 'tab', 'data-cat': id, onclick: () => { galleryFilter.cat = id; draw(); } }, label)));
   const search = h('div', { class: 'search' }, icon('search', { size: 16 }), h('input', { type: 'search', placeholder: 'Search content types…', value: galleryFilter.q, 'aria-label': 'Search content types', oninput: (e) => { galleryFilter.q = e.target.value; draw(); } }));
   app.replaceChildren(topbar('library'), banner() || '', h('section', { class: 'main gallery' },
     h('div', { class: 'main-head' }, h('button', { class: 'btn', type: 'button', onclick: () => go('#') }, icon('arrow-left', { size: 16 }), h('span', {}, 'Library')), h('h2', {}, 'What would you like to create?'), search),
     h('p', { class: 'lead' }, `${TYPE_LIST.length} content types. Not sure which one? Open "Learn more" to read what it does and try a working example.`),
-    chips, results));
+    results));
   draw();
 }
 
@@ -643,7 +659,7 @@ async function renderAdmin() {
     try { await api.patch(`/api/admin/users/${u.id}`, { status }); toast(suspend ? 'Account suspended' : 'Account reactivated'); refreshUsers(); } catch (e) { toast(e.message, 'error'); }
   };
   const setRole = async (u, role) => {
-    if (!await modal({ title: role === 'admin' ? `Make ${u.name} an admin?` : `Remove admin from ${u.name}?`, body: role === 'admin' ? 'Admins can see every user, suspend or delete accounts, and preview anyone\'s content.' : 'They will keep their account and content, as a teacher.', confirm: role === 'admin' ? 'Make admin' : 'Remove admin' })) return;
+    if (!await modal({ title: role === 'admin' ? `Make ${u.name} an admin?` : `Remove admin from ${u.name}?`, body: role === 'admin' ? 'Admins can see every user and how much they have created, suspend or delete accounts, manage admins and create password reset links.' : 'They will keep their account and content, as a teacher.', confirm: role === 'admin' ? 'Make admin' : 'Remove admin' })) return;
     try { await api.patch(`/api/admin/users/${u.id}`, { role }); toast('Role updated'); refreshUsers(); } catch (e) { toast(e.message, 'error'); }
   };
   const deleteUser = async (u) => {
@@ -668,14 +684,22 @@ async function renderAdmin() {
         h('div', {}, h('strong', {}, u.last_seen ? timeAgo(u.last_seen) : 'Never'), h('span', {}, 'last active')),
         h('div', {}, h('strong', {}, u.linked ? 'Yes' : 'No'), h('span', {}, 'linked to ReachLMS'))),
       d.byType.length > 0 && h('div', { class: 'ud-types' }, d.byType.map((r) => typeChip(TYPES[r.type] || { name: r.type, icon: 'help', color: '#888' }).appendChild(h('b', {}, ` ${r.n}`)).parentElement)),
-      h('h5', {}, 'Content'),
-      d.contents.length ? h('ul', { class: 'ud-list' }, d.contents.map((c) => {
-        const t = TYPES[c.type] || { name: c.type, icon: 'help', color: '#888' };
-        return h('li', {}, h('span', { class: 'ticon', style: { background: t.color } }, icon(t.icon, { size: 14 })), h('span', { class: 'grow' }, h('strong', {}, c.title), h('small', {}, `${t.name} · updated ${timeAgo(c.updated_at)}`)),
-          h('button', { class: 'btn sm', type: 'button', onclick: async () => { const full = await api.get(`/api/admin/contents/${c.id}`); previewModal(full.type, full.title, full.data, { subtitle: `${t.name} · by ${full.owner} (read only)` }); } }, icon('eye', { size: 15 }), h('span', {}, 'Preview')));
-      })) : h('p', { class: 'help' }, 'No content yet.'));
-    await modal({ title: 'User details', body, confirm: null, cancel: 'Close', wide: true });
+      h('h5', {}, 'Account actions'),
+      h('div', { class: 'ud-actions' }, ...userActions(u, () => body.closest('.modal-back')?.querySelector('.modal-head button')?.click())));
+    await modal({ title: 'User details', body, confirm: null, cancel: 'Close' });
   }
+  // Large labelled buttons for the user details window.
+  const userActions = (u, close) => {
+    const me = u.id === state.me.user.id;
+    const act = (ic, label, fn, cls = '') => h('button', { class: `btn ${cls}`, type: 'button', onclick: async () => { close(); await fn(); } }, icon(ic, { size: 15 }), h('span', {}, label));
+    return [
+      !me && (u.status === 'active' ? act('ban', 'Suspend account', () => setStatus(u, 'suspended')) : act('restore', 'Reactivate account', () => setStatus(u, 'active'))),
+      !me && act('shield', u.role === 'admin' ? 'Remove admin' : 'Make admin', () => setRole(u, u.role === 'admin' ? 'teacher' : 'admin')),
+      u.status === 'active' && act('key', 'Reset password', () => resetLink(u)),
+      !me && act('trash', 'Delete account', () => deleteUser(u), 'danger'),
+      me && h('p', { class: 'help' }, 'This is your own account. Another admin can change its role or status.'),
+    ].filter(Boolean);
+  };
 
   const renderAdminBody = () => {
     app.replaceChildren(topbar('admin'), h('section', { class: 'main admin' },

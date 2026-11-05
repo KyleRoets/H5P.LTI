@@ -105,30 +105,62 @@ export function zoneEditor({ getImage, zones, onChange, label = (z, i) => `Zone 
 // ---------- reorderable list for learners (drag, or move with buttons/keyboard) ----------
 export function sortableList(list, { onChange } = {}) {
   const items = () => [...list.children];
+  const reduce = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const scaleOf = () => { const w = list.offsetWidth; return w ? list.getBoundingClientRect().width / w : 1; };
+  // Move an item and let its neighbours slide into their new places.
+  const reorder = (fn, skip) => {
+    const els = items().filter((el) => el !== skip);
+    const before = new Map(els.map((el) => [el, el.getBoundingClientRect()]));
+    fn();
+    if (reduce()) return;
+    const k = scaleOf() || 1;
+    els.forEach((el) => {
+      const a = before.get(el); const b = el.getBoundingClientRect();
+      const dx = (a.left - b.left) / k; const dy = (a.top - b.top) / k;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 200, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    });
+  };
   list.addEventListener('pointerdown', (e) => {
     const item = e.target.closest('.rs-sort-item');
-    if (!item || list.dataset.locked || e.target.closest('button')) return;
+    if (!item || list.dataset.locked || e.target.closest('button') || e.button > 0) return;
     e.preventDefault();
-    const startY = e.clientY; const startX = e.clientX; let moved = false;
-    item.classList.add('dragging');
+    try { item.setPointerCapture(e.pointerId); } catch { /* not supported */ }
+    const k = scaleOf() || 1;
+    let moved = false; const origin = item.getBoundingClientRect(); let px = e.clientX; let py = e.clientY;
+    // The dragged item follows the pointer; the list reorders underneath it.
+    const grabX = e.clientX - origin.left; const grabY = e.clientY - origin.top;
+    const place = () => { item.style.transform = 'none'; const r = item.getBoundingClientRect(); item.style.transform = `translate(${(px - grabX - r.left) / k}px, ${(py - grabY - r.top) / k}px)`; };
     const move = (ev) => {
-      if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
-      moved = true;
-      const over = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.rs-sort-item');
-      if (over && over !== item && list.contains(over)) {
+      px = ev.clientX; py = ev.clientY;
+      if (!moved && Math.hypot(px - e.clientX, py - e.clientY) < 5) return;
+      if (!moved) { moved = true; item.classList.add('dragging'); }
+      item.style.visibility = 'hidden';
+      const over = document.elementFromPoint(px, py)?.closest('.rs-sort-item');
+      item.style.visibility = '';
+      if (over && over !== item && list.contains(over) && !over.getAnimations().length) {
         const r = over.getBoundingClientRect();
-        const horizontal = getComputedStyle(list).flexDirection === 'row';
-        const after = horizontal ? ev.clientX > r.left + r.width / 2 : ev.clientY > r.top + r.height / 2;
-        over[after ? 'after' : 'before'](item);
+        const horizontal = getComputedStyle(list).display === 'flex' && getComputedStyle(list).flexDirection.startsWith('row');
+        const after = horizontal ? px > r.left + r.width / 2 : py > r.top + r.height / 2;
+        if ((after ? over.nextElementSibling : over.previousElementSibling) !== item) reorder(() => over[after ? 'after' : 'before'](item), item);
       }
+      place();
     };
-    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); item.classList.remove('dragging'); if (moved) onChange?.(); };
-    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+    const end = () => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end);
+      if (!moved) return;
+      // Settle into the slot.
+      const from = item.style.transform; item.style.transform = '';
+      if (!reduce() && from && from !== 'none') item.animate([{ transform: from }, { transform: 'none' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' }).onfinish = () => item.classList.remove('dragging');
+      else item.classList.remove('dragging');
+      onChange?.();
+    };
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end);
   });
   const shift = (item, dir) => {
     const sib = dir < 0 ? item.previousElementSibling : item.nextElementSibling;
     if (!sib || list.dataset.locked) return;
-    if (dir < 0) sib.before(item); else sib.after(item);
+    reorder(() => { if (dir < 0) sib.before(item); else sib.after(item); });
     onChange?.();
     item.querySelector(dir < 0 ? '.up' : '.down')?.focus();
   };

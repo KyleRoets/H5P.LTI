@@ -17,7 +17,7 @@ Students see the content embedded inline. Scored content can also be added as a 
 
 ## Content types
 
-29 interactive types covering what H5P and Lumi offer, written as original code with no H5P dependency. The "Create new" gallery groups them into four categories and has a search box. "Graded" types send a score to the ReachLMS gradebook when added as an assignment.
+29 interactive types covering what H5P and Lumi offer, written as original code with no H5P dependency. The "Create new" gallery groups them into four sections and has a search box. Library cards show a live miniature of each item. Images, audio and video are uploaded (no links to files elsewhere). "Graded" types send a score to the ReachLMS gradebook when added as an assignment.
 
 **Questions & quizzes**
 
@@ -43,7 +43,7 @@ Students see the content embedded inline. Scored content can also be added as a 
 | Presentation | Slides (5 layouts, colours, images) with built-in questions; full-screen and keyboard navigation | ✓ |
 | Interactive Book | Chapters of text, images and any other activity, with progress and a total score | ✓ |
 | Branching Scenario | Choose a path through scenes to one of several endings, optionally scored | ✓ |
-| Interactive Video | YouTube or uploaded MP4/WebM pauses at set times for questions or info | ✓ |
+| Interactive Video | An uploaded MP4/WebM pauses at set times for questions or info | ✓ |
 | Timeline | Scroll through dated events with images | – |
 | Accordion | Expandable sections (FAQs, glossaries) | – |
 
@@ -232,6 +232,6 @@ test/e2e-lti.test.js       End-to-end test
 - **Grading model:** scores are calculated in the learner's browser and capped at the activity's maximum on the server. That's fine for formative activities. For high-stakes assessment, use ReachLMS's native quizzes, or add server-side answer checking.
 - **What is graded where:** content inserted with the RCE button is display-only (Canvas doesn't link RCE embeds to the gradebook). Use *Assignment → External Tool → ReachStudio* for graded activities.
 - **Quizzes:** the RCE button works where ReachLMS's editor shows LTI editor tools (pages, assignments, discussions, Classic Quiz questions). Support inside New Quizzes depends on your ReachLMS version, so check there first.
-- **Interactive Video:** YouTube videos need the learner's browser to be able to reach youtube.com.
+- **Interactive Video:** videos are uploaded (MP4/WebM, up to `MAX_UPLOAD_MB`, default 50 MB). Older items that used a YouTube link keep playing.
 - **Editing after embedding:** embeds reference content by ID, so editing an item updates it everywhere it is embedded. When the owner views an embed in ReachLMS, they see an **✎ Edit in ReachStudio** button.
 - **Scaling:** for multiple server instances, move SQLite and `media/` to shared storage (e.g. Postgres and S3). The in-memory sign-in throttle and token cache are per instance.

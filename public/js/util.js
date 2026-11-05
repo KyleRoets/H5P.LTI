@@ -254,10 +254,9 @@ export function mediaField(label, obj, key, onChange, ctx, opts = {}) {
     } });
     const up = h('button', { class: 'btn sm', type: 'button', onclick: () => file.click() }, icon('upload', { size: 15 }), h('span', {}, url ? 'Replace' : 'Upload'));
     if (url) wrap.append(h('div', { class: 'media-thumb' }, opts.audio ? h('audio', { src: url, controls: true, preload: 'none' }) : opts.video && !/youtu/.test(url) ? h('video', { src: url, controls: true, preload: 'metadata' }) : opts.video ? h('div', { class: 'yt-thumb' }, icon('type-video', { size: 28 }), 'YouTube video') : h('img', { src: url, alt: '' })));
-    else wrap.append(h('button', { type: 'button', class: 'media-drop', onclick: () => file.click() }, icon(opts.audio ? 'type-dictation' : opts.video ? 'type-video' : 'image', { size: 26 }), h('span', {}, opts.audio ? 'Click to upload an MP3 recording' : opts.video ? 'Upload a video or paste a YouTube link' : 'Click to upload an image')));
-    const urlInput = h('input', { type: 'url', placeholder: opts.audio ? 'or paste an MP3 link…' : opts.video ? 'or paste a YouTube / MP4 link…' : 'or paste an image link…', value: obj[key] && !obj[key].startsWith('/media/') ? obj[key] : '',
-      onchange: (e) => { obj[key] = e.target.value.trim(); onChange(); draw(); } });
-    wrap.append(h('div', { class: 'row' }, urlInput, up, file, obj[key] && iconBtn('trash', 'Remove', () => { obj[key] = ''; onChange(); draw(); })));
+    else wrap.append(h('button', { type: 'button', class: 'media-drop', onclick: () => file.click() }, icon(opts.audio ? 'type-dictation' : opts.video ? 'type-video' : 'image', { size: 26 }), h('span', {}, opts.audio ? 'Click to upload an MP3 recording' : opts.video ? 'Click to upload an MP4 or WebM video' : 'Click to upload an image')));
+    // Media must be uploaded: links to files elsewhere can break or change without notice.
+    wrap.append(h('div', { class: 'row' }, up, file, obj[key] && iconBtn('trash', 'Remove', () => { obj[key] = ''; onChange(); draw(); })));
   };
   draw();
   return h('div', { class: 'field' }, label && h('div', { class: 'label' }, label), wrap, opts.help && h('p', { class: 'help' }, opts.help));
@@ -526,47 +525,113 @@ export const feedback = (ok, good = 'Correct!', bad = 'Not quite.') =>
  * Pointer-based drag & drop with click-to-place fallback (touch + keyboard friendly).
  * onDrop(itemEl, targetEl) called when an item is dropped/placed on a [data-drop] target.
  */
+// ---------------- drag and drop ----------------
+const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+// How much an element is scaled on screen (the builder preview shrinks content with a transform).
+const screenScale = (el) => { const w = el.offsetWidth; return w ? el.getBoundingClientRect().width / w : 1; };
+
+/**
+ * Animates elements from where they were to wherever `mutate` puts them (FLIP).
+ * `from` can override the starting rectangle of particular elements (e.g. the drag ghost).
+ */
+export function flipMove(els, mutate, from = new Map()) {
+  const before = new Map(els.map((el) => [el, from.get(el) || el.getBoundingClientRect()]));
+  mutate();
+  if (reduceMotion()) return;
+  els.forEach((el) => {
+    const a = before.get(el); const b = el.getBoundingClientRect();
+    const dx = a.left - b.left; const dy = a.top - b.top;
+    if (!el.isConnected || (Math.abs(dx) < 1 && Math.abs(dy) < 1)) return;
+    const k = screenScale(el) || 1;
+    el.animate([{ transform: `translate(${dx / k}px, ${dy / k}px)` }, { transform: 'none' }],
+      { duration: from.has(el) ? 220 : 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  });
+}
+
+/**
+ * Drag-and-drop for players: `.rs-drag` items onto `[data-drop]` targets inside root.
+ * Works with mouse, touch and pen (drag, or tap an item then tap a target) and the keyboard
+ * (Enter/Space to pick up and to drop). Moves animate smoothly; a drop outside any target
+ * glides the item back to where it came from.
+ */
 export function dragSystem(root, { onDrop }) {
   let picked = null;
   const targets = () => [...root.querySelectorAll('[data-drop]')];
-  const clearPick = () => { picked?.classList.remove('picked'); picked = null; targets().forEach((t) => t.classList.remove('target')); };
-  const pick = (el) => { clearPick(); picked = el; el.classList.add('picked'); targets().forEach((t) => t.classList.add('target')); };
+  const clearPick = () => { picked?.classList.remove('picked'); picked = null; root.classList.remove('rs-picking'); targets().forEach((t) => t.classList.remove('target')); };
+  const pick = (el) => { clearPick(); picked = el; el.classList.add('picked'); root.classList.add('rs-picking'); targets().forEach((t) => t.classList.add('target')); };
+  const place = (el, target, from) => flipMove([...root.querySelectorAll('.rs-drag')], () => onDrop(el, target), from);
 
   root.addEventListener('pointerdown', (e) => {
     const item = e.target.closest('.rs-drag');
-    if (!item || root.dataset.locked || e.button > 0) return;
-    const sx = e.clientX; const sy = e.clientY; let ghost = null; let over = null;
+    if (!item || !root.contains(item) || root.dataset.locked || e.button > 0) return;
+    e.preventDefault(); // no text selection or touch scrolling while dragging
+    const start = item.getBoundingClientRect();
+    const k = screenScale(item) || 1;
+    const offX = e.clientX - start.left; const offY = e.clientY - start.top;
+    let layer = null; let over = null; let last = e; let raf = 0;
+    try { item.setPointerCapture(e.pointerId); } catch { /* not supported */ }
+
+    const lift = () => {
+      clearPick();
+      // The copy lives on <body>: inside the player a fixed element would be positioned
+      // relative to the content box (container queries), not the window.
+      const src = item.closest('.rs') || root; const cs = getComputedStyle(src);
+      layer = h('div', { class: 'rs-drag-layer', 'aria-hidden': 'true' });
+      ['--rs-accent', '--rs-bg', '--rs-fg', '--rs-radius', '--rs-font'].forEach((v) => layer.style.setProperty(v, cs.getPropertyValue(v)));
+      Object.assign(layer.style, { fontFamily: cs.fontFamily, fontSize: cs.fontSize, color: cs.color, width: `${item.offsetWidth}px`, transform: `scale(${k})` });
+      const ghost = item.cloneNode(true); ghost.classList.remove('picked'); ghost.classList.add('rs-ghost');
+      ghost.style.width = `${item.offsetWidth}px`;
+      layer.append(ghost); document.body.append(layer);
+      item.classList.add('rs-dragging'); root.classList.add('rs-is-dragging');
+      targets().forEach((t) => t.classList.add('target'));
+    };
+    const position = () => { layer.style.left = `${last.clientX - offX}px`; layer.style.top = `${last.clientY - offY}px`; };
+    const autoScroll = () => { // keep dragging when the target is just off-screen
+      raf = 0; if (!layer) return;
+      const edge = 40; const y = last.clientY; const dy = y < edge ? -(edge - y) : y > innerHeight - edge ? y - (innerHeight - edge) : 0;
+      if (dy) { scrollBy(0, dy / 3); raf = requestAnimationFrame(autoScroll); }
+    };
     const move = (ev) => {
-      if (!ghost && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
-      if (!ghost) {
-        clearPick();
-        ghost = item.cloneNode(true);
-        const r = item.getBoundingClientRect();
-        Object.assign(ghost.style, { position: 'fixed', pointerEvents: 'none', zIndex: 999, opacity: 0.92, margin: 0, width: `${r.width}px`, height: `${r.height}px` });
-        root.append(ghost); item.style.opacity = '.35';
-      }
-      ghost.style.left = `${ev.clientX - ghost.offsetWidth / 2}px`; ghost.style.top = `${ev.clientY - ghost.offsetHeight / 2}px`;
-      ghost.style.visibility = 'hidden';
+      last = ev;
+      if (!layer && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 5) return;
+      if (!layer) lift();
+      position();
       const t = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[data-drop]');
-      ghost.style.visibility = '';
-      if (t !== over) { over?.classList.remove('over'); over = t && root.contains(t) ? t : null; over?.classList.add('over'); }
+      const next = t && root.contains(t) ? t : null;
+      if (next !== over) { over?.classList.remove('over'); over = next; over?.classList.add('over'); }
+      if (!raf) raf = requestAnimationFrame(autoScroll);
     };
-    const up = () => {
-      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up);
-      if (ghost) { ghost.remove(); item.style.opacity = ''; over?.classList.remove('over'); if (over) onDrop(item, over); }
-      else if (picked === item) clearPick(); else pick(item);
+    const finish = (ev, cancelled) => {
+      window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', cancel);
+      if (raf) cancelAnimationFrame(raf);
+      if (!layer) { if (!cancelled) { if (picked === item) clearPick(); else pick(item); } return; }
+      const ghostRect = layer.firstChild.getBoundingClientRect();
+      over?.classList.remove('over'); targets().forEach((t) => t.classList.remove('target'));
+      root.classList.remove('rs-is-dragging');
+      const done = () => { layer.remove(); item.classList.remove('rs-dragging'); };
+      if (over && !cancelled) { done(); place(item, over, new Map([[item, ghostRect]])); return; }
+      // Dropped outside a target: glide back.
+      const home = item.getBoundingClientRect();
+      if (reduceMotion()) { done(); return; }
+      layer.animate([{ left: layer.style.left, top: layer.style.top }, { left: `${home.left}px`, top: `${home.top}px` }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' }).onfinish = done;
+      layer.firstChild.classList.add('rs-landing');
     };
-    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
+    const up = (ev) => finish(ev, false);
+    const cancel = (ev) => finish(ev, true);
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', cancel);
   });
   root.addEventListener('click', (e) => {
     const t = e.target.closest('[data-drop]');
-    if (picked && t && !e.target.closest('.rs-drag')) { const p = picked; clearPick(); onDrop(p, t); }
+    if (picked && t && root.contains(t) && !e.target.closest('.rs-drag')) { const p = picked; clearPick(); place(p, t); }
   });
   root.addEventListener('keydown', (e) => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.classList.contains('rs-drag')) { e.preventDefault(); picked === e.target ? clearPick() : pick(e.target); }
-    else if ((e.key === 'Enter' || e.key === ' ') && picked && e.target.matches('[data-drop]')) { e.preventDefault(); const p = picked; clearPick(); onDrop(p, e.target); }
+    else if ((e.key === 'Enter' || e.key === ' ') && picked && e.target.matches('[data-drop]')) { e.preventDefault(); const p = picked; clearPick(); place(p, e.target); p.focus(); }
+    else if (e.key === 'Escape' && picked) clearPick();
   });
-  return { clearPick };
+  /** Run a change that moves items (retry, show answers) with the same animation. */
+  const animate = (fn) => flipMove([...root.querySelectorAll('.rs-drag')], fn);
+  return { clearPick, animate };
 }
 
 /** Standard check / retry / solution action row. */

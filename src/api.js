@@ -347,9 +347,7 @@ apiRouter.post('/api/score', requireSession, async (req, res) => {
 apiRouter.get('/preview/:id', (req, res) => {
   const s = getSession(tokenFrom(req));
   const u = s?.userId && getUser(s.userId);
-  const c = u && u.status === 'active' && (u.role === 'admin'
-    ? db.prepare('SELECT * FROM contents WHERE id = ?').get(req.params.id)
-    : db.prepare('SELECT * FROM contents WHERE id = ? AND user_id = ?').get(req.params.id, u.id));
+  const c = u && u.status === 'active' && db.prepare('SELECT * FROM contents WHERE id = ? AND user_id = ?').get(req.params.id, u.id);
   if (!c) return res.status(404).send(views.message('Preview unavailable', 'Sign in to ReachStudio to preview your content.'));
   res.send(views.player(s.token, c, { canEdit: false, graded: false, preview: true }));
 });

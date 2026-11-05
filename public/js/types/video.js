@@ -44,7 +44,7 @@ export default {
   graded: true,
   tagline: 'A video that pauses at set moments to ask questions or show notes.',
   about: {
-    summary: 'Add questions and information pop-ups to a YouTube video or a video you upload. At each moment you choose, the video pauses and shows your question or note; learners answer, then carry on watching.',
+    summary: 'Add questions and information pop-ups to a video you upload. At each moment you choose, the video pauses and shows your question or note; learners answer, then carry on watching.',
     uses: ['Check understanding during a lecture or demonstration', 'Add explanations, definitions or links on top of a video', 'Make learners actively watch instead of skipping through', 'Turn a recorded lesson into a graded activity'],
     learners: 'Learners press play as normal. The video stops at each interaction until they respond. A timeline under the video lets them jump to any interaction.',
     tip: 'Space interactions out (every 1–3 minutes) and keep questions about what was just shown. Use the m:ss time from the video player to set each moment.',
@@ -60,7 +60,7 @@ export default {
 
   editor(data, ctx) {
     return h('div', {},
-      mediaField('Video', data, 'video', ctx.onChange, ctx, { video: true, accept: 'video/mp4,video/webm', help: 'Paste a YouTube link or upload an MP4/WebM file.' }),
+      mediaField('Video', data, 'video', ctx.onChange, ctx, { video: true, accept: 'video/mp4,video/webm', help: 'Upload an MP4 or WebM video file.' }),
       listEditor({
         items: data.interactions, label: 'Interactions', addText: 'Add interaction', onChange: ctx.onChange,
         empty: 'Add a question or note that appears at a moment in the video.',

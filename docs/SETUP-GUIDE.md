@@ -126,7 +126,7 @@ Open your web browser at **http://localhost:4000** (in Codespaces, the tab that 
 | 3 | Click **Close** | The page reloads and now has an editor box with a **ReachStudio** button |
 | 4 | Click the **ReachStudio** button in the editor toolbar | The studio pop-up asking you to **Create your studio account**, with name and email already filled in |
 | 5 | Type a password (8+ characters), click **Create my account** | An empty library: "Build your first interactive" |
-| 6 | Click **+ Create new**, then **Learn more** on any type | A gallery of 29 illustrated content types in four categories (with search); Learn more explains the type and lets you try a working example |
+| 6 | Click **+ Create new**, then **Learn more** on any type | A gallery of 29 illustrated content types in four sections (with search); Learn more explains the type and lets you try a working example |
 | 7 | Click **Create** on **Image Hotspots**, type a title, click the upload box and pick any picture | The picture appears in the editor and in the **Live preview** on the right |
 | 8 | Click on the picture in **Place hotspots** a couple of times, and type a title and text for each | Numbered markers appear; clicking one in the preview shows your text |
 | 9 | Click **Save & insert** | The pop-up closes and your hotspot image is on the course page and works |
@@ -308,6 +308,5 @@ If everything in Part 4 worked, it's ready for teachers.
 | No ReachStudio button in the editor | Not installed for this course, or it's under the Apps menu | Look under the **plug icon (Apps)**. Check **Settings → Apps** lists ReachStudio. Check the developer key is **ON** |
 | Grade doesn't appear in the gradebook | Content was added with the editor button, not as an assignment; or the assignment's quiz has no correct answers marked | Create it via **Assignment → External Tool**; make sure every question has a correct answer ticked |
 | "Score could not be sent to the gradebook" | The tool couldn't get permission from ReachLMS | Developer Keys → ReachStudio → check the key is ON and has the **Score** and **Line Item** scopes. Check Render **Logs** for the error text |
-| YouTube video doesn't play | The school network blocks YouTube | Upload an MP4 instead |
 
 If you get stuck, copy the exact error text plus the last 30 lines from Render → **Logs** and send them over.
