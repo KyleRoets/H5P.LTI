@@ -64,6 +64,20 @@ export const views = {
       </form></div>`);
   },
 
+  reset() {
+    return shell(`Reset your ${config.toolName} password`, `<div class="center-card reset-card">${brand}
+      <h1>Choose a new password</h1>
+      <p class="help">This link works once and expires 1 hour after it was created.</p>
+      <form id="reset-form" novalidate>
+        <label>New password<input type="password" name="password" autocomplete="new-password" required minlength="8"></label>
+        <label>Confirm new password<input type="password" name="confirm" autocomplete="new-password" required minlength="8"></label>
+        <p class="error hidden" role="alert"></p>
+        <button class="btn primary block" type="submit">Save new password</button>
+      </form>
+      <div class="done hidden"><p><strong>Your password has been changed.</strong></p><p>You can now sign in with your new password — or simply open ReachStudio from ReachLMS and sign in once.</p><a class="btn primary" href="/studio">Go to ReachStudio</a></div>
+      </div>`, { scripts: '<script type="module" src="/js/reset-page.js"></script>' });
+  },
+
   registered(name, clientId) {
     return shell('Installed', `<div class="center-card">
       ${brand}

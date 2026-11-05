@@ -321,7 +321,7 @@ ltiRouter.post('/lti/launch', async (req, res) => {
       placement,
     };
     const identity = payload.sub
-      ? db.prepare('SELECT user_id FROM lti_identities WHERE platform_id = ? AND sub = ?').get(platform.id, payload.sub)
+      ? db.prepare('SELECT user_id FROM lti_identities WHERE platform_id = ? AND sub = ? AND active = 1').get(platform.id, payload.sub)
       : null;
     const userId = identity?.user_id || null;
 

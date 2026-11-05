@@ -103,6 +103,17 @@ const userCols = db.prepare('PRAGMA table_info(users)').all().map((c) => c.name)
 if (!userCols.includes('role')) db.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'teacher'");
 if (!userCols.includes('status')) db.exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'");
 if (!userCols.includes('last_seen')) db.exec('ALTER TABLE users ADD COLUMN last_seen TEXT');
+const idCols = db.prepare('PRAGMA table_info(lti_identities)').all().map((c) => c.name);
+// active = 0 after "Sign out": the link no longer signs in automatically, but it can still be
+// used to prove who someone is when they reset a forgotten password from ReachLMS.
+if (!idCols.includes('active')) db.exec('ALTER TABLE lti_identities ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
+db.exec(`CREATE TABLE IF NOT EXISTS password_resets (
+  token_hash TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_by TEXT,
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER
+)`);
 
 export const newId = (bytes = 12) => crypto.randomBytes(bytes).toString('base64url');
 

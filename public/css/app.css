@@ -90,7 +90,18 @@ label.check input { width: 17px; height: 17px; accent-color: var(--sky); margin:
 .tabs-nav a { display: inline-flex; align-items: center; gap: 7px; color: #cfe0f7; text-decoration: none; font-weight: 650; font-size: 14px; padding: 7px 12px; border-radius: 9px; }
 .tabs-nav a:hover { background: rgba(255,255,255,.1); color: #fff; }
 .tabs-nav a.on { background: rgba(255,255,255,.16); color: #fff; }
-.user-chip { display: flex; align-items: center; gap: 9px; font-size: 13px; }
+.user-chip { display: flex; align-items: center; gap: 9px; font-size: 13px; border: none; background: transparent; color: #fff; cursor: pointer; padding: 4px 8px 4px 4px; border-radius: 99px; text-align: left; }
+.user-chip:hover, .user-chip[aria-expanded=true] { background: rgba(255,255,255,.12); }
+.menu.account-menu { top: calc(100% + 6px); bottom: auto; min-width: 230px; color: var(--ink); }
+.menu-head { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 10px; border-bottom: 1px solid var(--line-2); margin-bottom: 4px; }
+.menu-head small { color: var(--muted); word-break: break-all; }
+.menu-head .pill { align-self: flex-start; margin-top: 4px; }
+.link-btn { border: none; background: none; color: var(--sky-2); font-weight: 600; cursor: pointer; padding: 4px; justify-self: center; text-decoration: underline; text-underline-offset: 3px; }
+.copy-row { display: flex; gap: 8px; align-items: center; }
+.copy-row input { margin: 0; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px; }
+.forgot ol { padding-left: 20px; } .forgot li { margin: 6px 0; }
+.reset-card form { margin-top: 14px; }
+.reset-card .done { margin-top: 14px; }
 .user-chip .who { display: flex; flex-direction: column; line-height: 1.15; }
 .user-chip .who .r { font-size: 11px; opacity: .75; }
 .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--sky); color: #fff; display: grid; place-items: center; font-weight: 750; font-size: 12px; flex: none; }

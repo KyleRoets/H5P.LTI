@@ -44,6 +44,11 @@ Every type has a full description (what it is, what it's good for, what learners
 **Roles:**
 - **Teacher (default):** their own library and builder.
 - **Admin:** an **Admin** tab with usage statistics, content by type and the connected ReachLMS sites, plus user management: view a user's content, suspend or reactivate, make admin, or delete the account and its content.
+- **Passwords and recovery:**
+  - The account menu (click your avatar) has **Change password**. When ReachLMS has just confirmed who you are, you don't need your current password; otherwise you do.
+  - **Forgot your password?** If you've opened ReachStudio from ReachLMS before, opening it from ReachLMS again lets you choose a new password. This works because signing out keeps the ReachLMS link but stops automatic sign-in.
+  - Otherwise, an admin uses the **key** button in the Admin tab to create a one-time reset link, valid for 1 hour, and sends it to the person.
+  - Any password change or reset signs out the account's other sessions. Other ReachLMS logins then need to sign in once with the new password.
 - **Becoming an admin:** list admin emails in `ADMIN_EMAILS`, or run `npm run make-admin -- someone@school.edu`. In demo mode the first account is an admin.
 
 Every player works with mouse, touch and keyboard. Drag interactions also support "click to pick, click to place".

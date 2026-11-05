@@ -39,7 +39,7 @@ async function boot() {
     if (e.status === 401) { state.token = ''; return renderAuth(); }
     throw e;
   }
-  if (!state.me.user) return renderAuth();
+  if (!state.me.user) return renderAuth(state.me.recoverable ? 'login' : 'signup');
   if (state.me.user.status !== 'active') return renderSuspended();
   await loadLibrary();
   route();
@@ -81,10 +81,46 @@ function topbar(active = '') {
     h('div', { class: 'spacer' }),
     l?.context && h('span', { class: 'ctx' }, icon('book', { size: 14 }), l.context),
     u && inFrame && h('button', { class: 'btn ghost sm', type: 'button', title: 'Open ReachStudio in a full browser tab', onclick: openInNewTab }, icon('external', { size: 15 }), h('span', { class: 'hide-md' }, 'Full screen')),
-    u && h('div', { class: 'user-chip', title: `${u.name} · ${u.role === 'admin' ? 'Admin' : 'Teacher'}` },
-      h('span', { class: 'avatar', 'aria-hidden': 'true' }, initials),
-      h('span', { class: 'who' }, h('span', { class: 'n' }, u.name), h('span', { class: 'r' }, u.role === 'admin' ? 'Admin' : 'Teacher')),
-      iconBtn('logout', 'Sign out', signOut, { cls: 'on-dark' })));
+    u && accountMenu(u, initials));
+}
+
+function accountMenu(u, initials) {
+  const role = u.role === 'admin' ? 'Admin' : 'Teacher';
+  const menu = h('div', { class: 'menu account-menu hidden', role: 'menu' },
+    h('div', { class: 'menu-head' }, h('strong', {}, u.name), h('small', {}, u.email), h('span', { class: `pill ${u.role}` }, role)),
+    h('button', { type: 'button', role: 'menuitem', onclick: () => { menu.classList.add('hidden'); changePassword(); } }, icon('key', { size: 15 }), h('span', {}, 'Change password')),
+    h('button', { type: 'button', role: 'menuitem', onclick: () => { menu.classList.add('hidden'); signOut(); } }, icon('logout', { size: 15 }), h('span', {}, 'Sign out')));
+  const btn = h('button', { type: 'button', class: 'user-chip', 'aria-haspopup': 'menu', 'aria-label': `Account: ${u.name} (${role})`, title: `${u.name} · ${role}`,
+    onclick: (e) => { e.stopPropagation(); menu.classList.toggle('hidden'); if (!menu.classList.contains('hidden')) menu.querySelector('button')?.focus(); } },
+  h('span', { class: 'avatar', 'aria-hidden': 'true' }, initials),
+  h('span', { class: 'who' }, h('span', { class: 'n' }, u.name), h('span', { class: 'r' }, role)),
+  icon('chevron-down', { size: 15 }));
+  return h('span', { class: 'menu-wrap' }, btn, menu);
+}
+
+async function changePassword() {
+  const noCurrent = state.me?.passwordWithoutCurrent;
+  const f = { current: '', password: '', confirm: '' };
+  const err = h('p', { class: 'error hidden', role: 'alert' });
+  const body = h('div', { class: 'pw-form' },
+    noCurrent ? h('div', { class: 'note' }, icon('shield', { size: 16 }), h('span', {}, 'ReachLMS has confirmed it\'s you, so you don\'t need your current password.'))
+      : textField('Current password', f, 'current', () => {}, { type: 'password' }),
+    textField('New password', f, 'password', () => {}, { type: 'password', help: 'At least 8 characters.' }),
+    textField('Confirm new password', f, 'confirm', () => {}, { type: 'password' }),
+    err);
+  body.querySelectorAll('input[type=password]').forEach((i, n) => { i.autocomplete = !noCurrent && n === 0 ? 'current-password' : 'new-password'; });
+  for (;;) {
+    const ok = await modal({ title: 'Change password', body, confirm: 'Save new password' });
+    if (ok === null) return; // cancelled
+    const fail = (m) => { err.textContent = m; err.classList.remove('hidden'); };
+    if (f.password.length < 8) { fail('The new password must be at least 8 characters.'); continue; }
+    if (f.password !== f.confirm) { fail('The two new passwords don\'t match.'); continue; }
+    try {
+      await api.post('/api/auth/password', { current: f.current, password: f.password });
+      toast('Password changed. Other devices have been signed out.');
+      return;
+    } catch (e) { fail(e.message); }
+  }
 }
 
 function banner() {
@@ -143,17 +179,64 @@ function renderAuth(mode = 'signup') {
     textField('Email', fields, 'email', () => {}, { type: 'email' }),
     textField('Password', fields, 'password', () => {}, { type: 'password', help: mode === 'signup' ? 'At least 8 characters.' : '' }),
     err,
-    h('button', { class: 'btn primary block', type: 'submit' }, mode === 'signup' ? 'Create my account' : 'Sign in'));
+    h('button', { class: 'btn primary block', type: 'submit' }, mode === 'signup' ? 'Create my account' : 'Sign in'),
+    mode === 'login' && h('button', { class: 'link-btn', type: 'button', onclick: forgotPassword }, 'Forgot your password?'));
   form.querySelector('input[type=password]').autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
   app.replaceChildren(h('div', { class: 'auth-wrap' }, h('div', { class: 'auth-card' },
     logo({ size: 'lg' }),
     h('h1', {}, mode === 'signup' ? 'Create your studio account' : 'Welcome back'),
     h('p', { class: 'sub' }, 'Build interactive content once, keep it organised, and embed it anywhere in ReachLMS.'),
-    l && h('div', { class: 'note' }, icon('link', { size: 16 }),
-      h('span', {}, 'Your account will be linked to your ReachLMS login', l.platformName ? ` at ${l.platformName}` : '', '. Next time, the studio opens straight away.')),
+    state.me?.recoverable ? h('div', { class: 'note' }, icon('user', { size: 16 }),
+      h('span', {}, `Welcome back, ${state.me.recoverable.name}. Your ReachLMS login is linked to ${state.me.recoverable.emailHint}. Sign in — or if you've forgotten your password, choose "Forgot your password?".`))
+      : l && h('div', { class: 'note' }, icon('link', { size: 16 }),
+        h('span', {}, 'Your account will be linked to your ReachLMS login', l.platformName ? ` at ${l.platformName}` : '', '. Next time, the studio opens straight away.')),
     !state.token && h('div', { class: 'note' }, icon('info', { size: 16 }), h('span', {}, 'Opened outside ReachLMS — sign in to manage your library. To insert content, open ReachStudio from the editor in ReachLMS.')),
     tabs, form)));
   form.querySelector('input')?.focus();
+}
+
+async function forgotPassword() {
+  if (state.me?.recoverable) return renderRecover();
+  const inLms = !!state.me?.lti;
+  await modal({ title: 'Forgot your password?', confirm: null, cancel: 'OK', body: h('div', { class: 'forgot' },
+    h('p', {}, 'You can get back into ReachStudio in two ways:'),
+    h('ol', {},
+      h('li', {}, h('strong', {}, 'Through ReachLMS: '), inLms
+        ? 'this ReachLMS login hasn\'t been linked to a ReachStudio account yet, so it can\'t be used to reset a password. Use option 2.'
+        : 'open ReachStudio from the editor button in ReachLMS. If your account is linked to your ReachLMS login, you can set a new password there without the old one.'),
+      h('li', {}, h('strong', {}, 'Ask your ReachStudio admin: '), 'they can send you a one-time link to choose a new password.'))) });
+}
+
+function renderRecover() {
+  const r = state.me.recoverable;
+  const f = { password: '', confirm: '' };
+  const err = h('p', { class: 'error hidden', role: 'alert' });
+  const form = h('form', { onsubmit: async (e) => {
+    e.preventDefault();
+    err.classList.add('hidden');
+    const fail = (m) => { err.textContent = m; err.classList.remove('hidden'); };
+    if (f.password.length < 8) return fail('Your new password must be at least 8 characters.');
+    if (f.password !== f.confirm) return fail('The two passwords don\'t match.');
+    try {
+      await api.post('/api/auth/recover', { password: f.password });
+      state.me = await api.get('/api/me');
+      await loadLibrary();
+      toast('Password changed — you\'re signed in.');
+      route();
+    } catch (ex) { fail(ex.message); }
+  } },
+  textField('New password', f, 'password', () => {}, { type: 'password', help: 'At least 8 characters.' }),
+  textField('Confirm new password', f, 'confirm', () => {}, { type: 'password' }),
+  err,
+  h('button', { class: 'btn primary block', type: 'submit' }, 'Save password and sign in'),
+  h('button', { class: 'link-btn', type: 'button', onclick: () => renderAuth('login') }, 'Back to sign in'));
+  form.querySelectorAll('input').forEach((i) => { i.autocomplete = 'new-password'; });
+  app.replaceChildren(h('div', { class: 'auth-wrap' }, h('div', { class: 'auth-card' },
+    logo({ size: 'lg' }),
+    h('h1', {}, 'Choose a new password'),
+    h('div', { class: 'note' }, icon('shield', { size: 16 }), h('span', {}, `ReachLMS has confirmed you're ${r.name}, the owner of the ReachStudio account ${r.emailHint}. Choose a new password to sign back in.`)),
+    form)));
+  form.querySelector('input').focus();
 }
 
 // ---------------- library ----------------
@@ -521,7 +604,21 @@ async function renderAdmin() {
         ? iconBtn('ban', `Suspend ${u.name}`, () => setStatus(u, 'suspended'))
         : iconBtn('restore', `Reactivate ${u.name}`, () => setStatus(u, 'active'))),
       !me && iconBtn('shield', u.role === 'admin' ? `Remove admin from ${u.name}` : `Make ${u.name} an admin`, () => setRole(u, u.role === 'admin' ? 'teacher' : 'admin'), { cls: u.role === 'admin' ? 'on' : '' }),
+      u.status === 'active' && iconBtn('key', `Create a password reset link for ${u.name}`, () => resetLink(u)),
       !me && iconBtn('trash', `Delete ${u.name}`, () => deleteUser(u), { cls: 'danger' }));
+  };
+  const resetLink = async (u) => {
+    if (!await modal({ title: `Reset ${u.name}'s password?`, body: 'This creates a one-time link that lets them choose a new password. It works once and expires after 1 hour. Their current password keeps working until they use it.', confirm: 'Create link' })) return;
+    let r;
+    try { r = await api.post(`/api/admin/users/${u.id}/reset-link`); } catch (e) { toast(e.message, 'error'); return; }
+    const input = h('input', { type: 'text', readonly: true, value: r.url, 'aria-label': 'Reset link', onfocus: (e) => e.target.select() });
+    const copy = h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+      try { await navigator.clipboard.writeText(r.url); } catch { input.select(); document.execCommand('copy'); }
+      copy.lastChild.textContent = 'Copied'; } }, icon('copy', { size: 15 }), h('span', {}, 'Copy link'));
+    await modal({ title: 'Password reset link', confirm: null, cancel: 'Done', body: h('div', { class: 'reset-link' },
+      h('p', {}, `Send this link to ${u.name} (${u.email}) — for example by email or chat. It works once and expires at ${new Date(r.expiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`),
+      h('div', { class: 'copy-row' }, input, copy),
+      h('p', { class: 'help' }, 'Only the newest link works. When they use it, they are signed out everywhere and sign in again with the new password.')) });
   };
   const refreshUsers = async () => { users = await api.get('/api/admin/users'); stats = await api.get('/api/admin/stats'); renderAdminBody(); };
   const setStatus = async (u, status) => {

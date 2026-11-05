@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { db } from './db.js';
 import { config } from './config.js';
+import crypto from 'node:crypto';
 import { requireAdmin, revokeUserSessions } from './sessions.js';
+import { hashToken } from './api.js';
 
 export const adminRouter = express.Router();
 adminRouter.use('/api/admin', express.json(), requireAdmin);
@@ -32,7 +34,7 @@ const USER_SQL = `
     (SELECT COUNT(*) FROM contents c WHERE c.user_id = u.id) AS contents,
     (SELECT COALESCE(SUM(size), 0) FROM media m WHERE m.user_id = u.id) AS media_bytes,
     (SELECT MAX(updated_at) FROM contents c WHERE c.user_id = u.id) AS last_edit,
-    (SELECT COUNT(*) FROM lti_identities i WHERE i.user_id = u.id) AS linked
+    (SELECT COUNT(*) FROM lti_identities i WHERE i.user_id = u.id AND i.active = 1) AS linked
   FROM users u`;
 
 adminRouter.get('/api/admin/users', (req, res) => {
@@ -75,6 +77,18 @@ adminRouter.patch('/api/admin/users/:id', (req, res) => {
     db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, target.id);
   }
   res.json(db.prepare(`${USER_SQL} WHERE u.id = ?`).get(target.id));
+});
+
+// One-time password reset link (valid for 1 hour) for the admin to send to the user.
+adminRouter.post('/api/admin/users/:id/reset-link', (req, res) => {
+  const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found.' });
+  if (target.status !== 'active') return res.status(400).json({ error: 'Reactivate this account before resetting its password.' });
+  const token = crypto.randomBytes(32).toString('base64url');
+  const expiresAt = Date.now() + 60 * 60 * 1000;
+  db.prepare('DELETE FROM password_resets WHERE user_id = ? AND used_at IS NULL').run(target.id); // only the newest link works
+  db.prepare('INSERT INTO password_resets (token_hash, user_id, created_by, expires_at) VALUES (?, ?, ?, ?)').run(hashToken(token), target.id, req.user.id, expiresAt);
+  res.json({ url: `${config.publicUrl}/reset?token=${token}`, expiresAt, email: target.email, name: target.name });
 });
 
 adminRouter.delete('/api/admin/users/:id', (req, res) => {

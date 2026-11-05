@@ -277,7 +277,7 @@ If everything in Part 4 worked, it's ready for teachers.
 
 ## Part 5: Rolling it out
 
-**Admin view:** sign in to ReachStudio with the email you put in `ADMIN_EMAILS` (in ReachLMS, or at `https://YOUR-ADDRESS/studio`). Click the **Admin** tab to see every teacher's account, how much they've created, and when they were last active. From there you can suspend, reactivate, make admin, or delete an account. To add another admin later, add their email to `ADMIN_EMAILS` in Render and redeploy. Or, in Render's **Shell**, run `su-exec node npm run make-admin -- their@email`.
+**Admin view:** sign in to ReachStudio with the email you put in `ADMIN_EMAILS` (in ReachLMS, or at `https://YOUR-ADDRESS/studio`). Click the **Admin** tab to see every teacher's account, how much they've created, and when they were last active. From there you can suspend, reactivate, make admin, or delete an account. **Forgotten passwords:** teachers who've used ReachStudio from ReachLMS before can open it from ReachLMS and choose **Forgot your password?** to set a new one. For anyone else, find them in the Admin tab, click the **key** button, and send them the one-time reset link (valid for 1 hour). To add another admin later, add their email to `ADMIN_EMAILS` in Render and redeploy. Or, in Render's **Shell**, run `su-exec node npm run make-admin -- their@email`.
 
 1. **Pilot first:** install in one sub-account, or a few courses, for a couple of weeks.
 2. **Tell teachers:**

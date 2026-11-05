@@ -298,6 +298,69 @@ try {
     assert.equal(r.status, 200);
     assert.equal((await t('GET', '/api/contents')).body.length, 3);
   });
+  const jpost = (p, body) => fetch(TOOL + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const loginAs = async (email, password) => { const r = await jpost('/api/auth/login', { email, password }); return { status: r.status, body: await r.json() }; };
+
+  await step('admin reset link: one-time, newest only, signs the user out everywhere', async () => {
+    const su = await (await jpost('/api/auth/signup', { name: 'Reset Me', email: 'resetme@school.test', password: 'original password' })).json();
+    const victim = api(su.token);
+    assert.equal((await victim('POST', `/api/admin/users/${su.user.id}/reset-link`)).status, 403, 'teachers cannot create reset links');
+    const first = await teacher('POST', `/api/admin/users/${su.user.id}/reset-link`);
+    const second = await teacher('POST', `/api/admin/users/${su.user.id}/reset-link`);
+    assert.match(second.body.url, /^http:\/\/localhost:3101\/reset\?token=[\w-]{40,}$/);
+    const page = await (await fetch(second.body.url)).text();
+    assert.match(page, /Choose a new password/);
+    const tok = (u) => new URL(u).searchParams.get('token');
+    assert.equal((await jpost('/api/auth/reset', { token: tok(first.body.url), password: 'hijacked pass 1' })).status, 400, 'older link no longer works');
+    assert.equal((await jpost('/api/auth/reset', { token: tok(second.body.url), password: 'short' })).status, 400, 'password rules apply');
+    const ok = await jpost('/api/auth/reset', { token: tok(second.body.url), password: 'brand new pass' });
+    assert.equal(ok.status, 200);
+    assert.equal((await jpost('/api/auth/reset', { token: tok(second.body.url), password: 'another one 1' })).status, 400, 'link works only once');
+    assert.equal((await victim('GET', '/api/contents')).status, 401, 'existing sessions are signed out');
+    assert.equal((await loginAs('resetme@school.test', 'original password')).status, 401);
+    assert.equal((await loginAs('resetme@school.test', 'brand new pass')).status, 200);
+  });
+
+  await step('change password: current password required outside ReachLMS', async () => {
+    const l = await loginAs('taylor@school.test', 'correct horse battery');
+    const t = api(l.body.token);
+    assert.equal((await t('GET', '/api/me')).body.passwordWithoutCurrent, false);
+    assert.equal((await t('POST', '/api/auth/password', { password: 'new password 2' })).status, 401);
+    assert.equal((await t('POST', '/api/auth/password', { current: 'wrong', password: 'new password 2' })).status, 401);
+    assert.equal((await t('POST', '/api/auth/password', { current: 'correct horse battery', password: 'new password 2' })).status, 200);
+    assert.equal((await loginAs('taylor@school.test', 'correct horse battery')).status, 401);
+    assert.equal((await t('GET', '/api/contents')).status, 200, 'the session that changed it stays signed in');
+  });
+
+  await step('forgot password from ReachLMS: a previously linked login can set a new password', async () => {
+    // The password change above stopped ReachLMS logins signing in automatically.
+    const l = await launch('dl:editor_button', 'teacher');
+    const t = api(bootToken(l.html));
+    const me = (await t('GET', '/api/me')).body;
+    assert.equal(me.user, null);
+    assert.match(me.recoverable.emailHint, /^t\*+r@school\.test$/);
+    assert.equal(me.recoverable.name, 'Taylor Teacher');
+    assert.equal((await t('POST', '/api/auth/recover', { password: 'short' })).status, 400);
+    const r = await t('POST', '/api/auth/recover', { password: 'recovered pass 3' });
+    assert.equal(r.status, 200); assert.equal(r.body.user.email, 'taylor@school.test');
+    const me2 = (await t('GET', '/api/me')).body;
+    assert.equal(me2.user.email, 'taylor@school.test');
+    assert.equal(me2.passwordWithoutCurrent, true, 'ReachLMS vouches for this session');
+    assert.equal((await t('POST', '/api/auth/recover', { password: 'again again 4' })).status, 400, 'not available once signed in');
+    assert.equal((await t('POST', '/api/auth/password', { password: 'set via lms 5' })).status, 200, 'no current password needed');
+    assert.equal((await loginAs('taylor@school.test', 'set via lms 5')).status, 200);
+    const next = await launch('dl:editor_button', 'teacher');
+    assert.equal((await api(bootToken(next.html))('GET', '/api/me')).body.user?.email, 'taylor@school.test', 'next launch signs in automatically again');
+  });
+
+  await step('a ReachLMS login never linked to an account cannot use recovery', async () => {
+    const l = await launch('dl:editor_button', 'guest');
+    const t = api(bootToken(l.html));
+    const me = (await t('GET', '/api/me')).body;
+    assert.equal(me.user, null);
+    assert.equal(me.recoverable, null);
+    assert.equal((await t('POST', '/api/auth/recover', { password: 'take over 123' })).status, 400);
+  });
 } catch {
   // reported below
 } finally {

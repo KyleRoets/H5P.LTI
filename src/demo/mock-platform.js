@@ -13,6 +13,7 @@ const LOGO = path.join(path.dirname(fileURLToPath(import.meta.url)), 'reachlms-l
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const USERS = {
   teacher: { sub: 'user-teacher-1', name: 'Taylor Teacher', given_name: 'Taylor', family_name: 'Teacher', email: 'taylor@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'] },
+  guest: { sub: 'user-guest-1', name: 'Gale Guest', given_name: 'Gale', family_name: 'Guest', email: 'gale@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'] },
   student: { sub: 'user-student-1', name: 'Sam Student', given_name: 'Sam', family_name: 'Student', email: 'sam@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Learner'] },
 };
 

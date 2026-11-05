@@ -3,6 +3,7 @@ import express from 'express';
 import path from 'node:path';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
+import crypto from 'node:crypto';
 import { db, newId } from './db.js';
 import { config } from './config.js';
 import { createSession, getSession, setSessionUser, deleteSession, tokenFrom, requireSession, requireUser } from './sessions.js';
@@ -26,9 +27,30 @@ const emailOk = (e) => typeof e === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.tes
 
 function linkIdentity(session, userId) {
   if (session?.lti?.platformId && session.lti.sub) {
-    db.prepare('INSERT OR REPLACE INTO lti_identities (platform_id, sub, user_id) VALUES (?, ?, ?)')
+    db.prepare('INSERT OR REPLACE INTO lti_identities (platform_id, sub, user_id, active) VALUES (?, ?, ?, 1)')
       .run(session.lti.platformId, session.lti.sub, userId);
   }
+}
+
+/** The ReachLMS identity behind this session, if any: { user_id, active }. */
+const sessionIdentity = (session) => (session?.lti?.platformId && session.lti.sub
+  ? db.prepare('SELECT user_id, active FROM lti_identities WHERE platform_id = ? AND sub = ?').get(session.lti.platformId, session.lti.sub)
+  : null);
+
+/** True when ReachLMS has just vouched for this user (their linked identity launched this session). */
+const verifiedByReachLms = (session, userId) => { const i = sessionIdentity(session); return !!(i && i.active && i.user_id === userId); };
+
+const maskEmail = (e) => String(e).replace(/^(.)(.*)(.@.*)$/, (m, a, b, c) => a + '*'.repeat(Math.min(b.length, 6)) + c);
+const passwordOk = (p) => typeof p === 'string' && p.length >= 8 && p.length <= 200;
+
+/**
+ * After a password change or reset: sign out every other session, and stop other ReachLMS
+ * identities from signing in automatically (they must sign in once with the new password).
+ */
+function secureAccountAfterPasswordChange(userId, keepToken, keepSession) {
+  db.prepare('UPDATE sessions SET user_id = NULL WHERE user_id = ? AND token != ?').run(userId, keepToken || '');
+  db.prepare('UPDATE lti_identities SET active = 0 WHERE user_id = ?').run(userId);
+  if (keepSession) linkIdentity(keepSession, userId);
 }
 
 // Simple in-memory brute-force protection for sign-in.
@@ -45,6 +67,10 @@ apiRouter.get('/api/me', requireSession, (req, res) => {
   const l = req.session.lti;
   res.json({
     user: publicUser(getUser(req.session.userId)),
+    // Can this session set a new password without the current one? (ReachLMS has vouched for the user.)
+    passwordWithoutCurrent: !!req.session.userId && verifiedByReachLms(req.session, req.session.userId),
+    // Signed-out ReachLMS user whose identity was linked before: they can reset a forgotten password.
+    recoverable: !req.session.userId ? recoverableFor(req.session) : null,
     lti: l ? {
       kind: l.kind, placement: l.placement, name: l.name, email: l.email, instructor: l.instructor,
       context: l.context, platformName: l.platformName, canEmbed: l.kind === 'deeplink',
@@ -98,14 +124,72 @@ apiRouter.post('/api/auth/login', async (req, res) => {
 
 apiRouter.post('/api/auth/logout', requireSession, (req, res) => {
   if (req.session.lti?.platformId) {
-    // Unlink this ReachLMS identity so the next launch asks for an account again.
-    db.prepare('DELETE FROM lti_identities WHERE platform_id = ? AND sub = ?').run(req.session.lti.platformId, req.session.lti.sub);
+    // Stop this ReachLMS identity signing in automatically. The link is kept (inactive) so the
+    // person can still prove who they are from ReachLMS if they forget their password.
+    db.prepare('UPDATE lti_identities SET active = 0 WHERE platform_id = ? AND sub = ?').run(req.session.lti.platformId, req.session.lti.sub);
     setSessionUser(req.session.token, null);
   } else {
     deleteSession(req.session.token);
   }
   res.json({ ok: true });
 });
+
+function recoverableFor(session) {
+  const i = sessionIdentity(session);
+  if (!i || i.active) return null;
+  const u = getUser(i.user_id);
+  return u && u.status === 'active' ? { emailHint: maskEmail(u.email), name: u.name } : null;
+}
+
+// Change password. The current password is needed unless ReachLMS has just vouched for the user.
+apiRouter.post('/api/auth/password', requireUser, async (req, res) => {
+  const { current, password } = req.body || {};
+  if (!passwordOk(password)) return res.status(400).json({ error: 'The new password must be at least 8 characters.' });
+  const user = getUser(req.session.userId);
+  if (!verifiedByReachLms(req.session, user.id)) {
+    const key = `pw|${user.id}`;
+    if (tooMany(key)) return res.status(429).json({ error: 'Too many attempts. Please wait 15 minutes.' });
+    if (!(await bcrypt.compare(String(current || ''), user.password_hash))) {
+      attempts.get(key).push(Date.now());
+      return res.status(401).json({ error: 'Your current password is incorrect.' });
+    }
+  }
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await bcrypt.hash(password, 11), user.id);
+  secureAccountAfterPasswordChange(user.id, req.session.token, req.session);
+  res.json({ ok: true });
+});
+
+// Forgot password, opened from ReachLMS: a signed-out person whose ReachLMS login was linked to
+// the account before can choose a new password (ReachLMS has just confirmed who they are).
+apiRouter.post('/api/auth/recover', requireSession, async (req, res) => {
+  const { password } = req.body || {};
+  const i = sessionIdentity(req.session);
+  if (req.session.userId || !i || i.active) return res.status(400).json({ error: 'Password recovery through ReachLMS isn\'t available here. Ask your ReachStudio admin for a reset link.' });
+  const user = getUser(i.user_id);
+  if (!user || user.status !== 'active') return res.status(403).json({ error: 'This account is suspended. Please contact your administrator.' });
+  if (!passwordOk(password)) return res.status(400).json({ error: 'The new password must be at least 8 characters.' });
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await bcrypt.hash(password, 11), user.id);
+  setSessionUser(req.session.token, user.id);
+  secureAccountAfterPasswordChange(user.id, req.session.token, req.session);
+  res.json({ ok: true, user: publicUser(getUser(user.id)) });
+});
+
+// Reset with a one-time link created by an admin.
+export const hashToken = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
+apiRouter.post('/api/auth/reset', async (req, res) => {
+  const { token, password } = req.body || {};
+  const row = token && db.prepare('SELECT * FROM password_resets WHERE token_hash = ?').get(hashToken(token));
+  if (!row || row.used_at || row.expires_at < Date.now()) return res.status(400).json({ error: 'This reset link has expired or has already been used. Ask your admin for a new one.' });
+  if (!passwordOk(password)) return res.status(400).json({ error: 'The new password must be at least 8 characters.' });
+  const user = getUser(row.user_id);
+  if (!user || user.status !== 'active') return res.status(403).json({ error: 'This account is suspended. Please contact your administrator.' });
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(await bcrypt.hash(password, 11), user.id);
+  db.prepare('UPDATE password_resets SET used_at = ? WHERE token_hash = ?').run(Date.now(), row.token_hash);
+  secureAccountAfterPasswordChange(user.id, null, null);
+  res.json({ ok: true, email: user.email });
+});
+
+apiRouter.get('/reset', (req, res) => res.send(views.reset()));
 
 // Opens the studio in a new browser tab with a fresh session (no embedding from there).
 apiRouter.post('/api/session/handoff', requireUser, (req, res) => {
