@@ -22,7 +22,17 @@ export async function createApp() {
     res.set('X-Content-Type-Options', 'nosniff');
     next();
   });
-  app.use(express.static(path.join(root, 'public'), { maxAge: '1h' }));
+  // App code lives at a per-deploy path (/js/v/<build>/studio.js; its relative imports follow),
+  // so a new deploy can never run old cached code.
+  app.use('/js/v/:build', express.static(path.join(root, 'public', 'js'), { setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
+  // JS/CSS: always check for a newer copy (unchanged files answer "304 Not Modified").
+  // Fonts and images rarely change and can be cached for a day.
+  app.use(express.static(path.join(root, 'public'), {
+    setHeaders: (res, file) => {
+      if (/\.(js|css|html)$/.test(file)) res.set('Cache-Control', 'no-cache');
+      else res.set('Cache-Control', 'public, max-age=86400');
+    },
+  }));
   app.use('/media', mediaStatic());
   if (config.demo) {
     // Pretend ReachLMS on the same address, so the whole flow can be tested from one URL.

@@ -23,7 +23,11 @@ function detectPublicUrl() {
   return `http://localhost:${port}`;
 }
 
+// Changes on every deploy; used in asset URLs so browsers never run an old copy of the app.
+const build = (process.env.RENDER_GIT_COMMIT || process.env.SOURCE_COMMIT || Date.now().toString(36)).slice(0, 10);
+
 export const config = {
+  build,
   port,
   // The public HTTPS address of this tool, e.g. https://studio.reachlms.com (no trailing slash).
   publicUrl: detectPublicUrl().replace(/\/$/, ''),

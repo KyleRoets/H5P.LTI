@@ -12,7 +12,7 @@ const shell = (title, body, { scripts = '', bodyClass = '' } = {}) => `<!doctype
 <link rel="icon" href="/img/icon-64.png" type="image/png" sizes="64x64">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
 <link rel="preload" href="/fonts/alegreya-sans-800.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/css/app.css">
+<link rel="stylesheet" href="/css/app.css?v=${config.build}">
 </head><body class="${bodyClass}">${body}${scripts}</body></html>`;
 
 // The "ReachStudio by YouMultiply" lockup for server-rendered pages.
@@ -23,7 +23,7 @@ export const views = {
 
   studio(token) {
     return shell(config.toolName, '<div id="app" class="app"><div class="loading">Loading ReachStudio…</div></div>', {
-      scripts: `<script>window.BOOT=${json({ token, toolName: config.toolName })}</script><script type="module" src="/js/studio.js"></script>`,
+      scripts: `<script>window.BOOT=${json({ token, toolName: config.toolName })}</script><script type="module" src="/js/v/${config.build}/studio.js"></script>`,
     });
   },
 
@@ -37,7 +37,7 @@ export const views = {
     };
     return shell(content.title, '<main id="player" class="player-root"></main>', {
       bodyClass: 'player-body',
-      scripts: `<script>window.BOOT=${json(boot)}</script><script type="module" src="/js/player-page.js"></script>`,
+      scripts: `<script>window.BOOT=${json(boot)}</script><script type="module" src="/js/v/${config.build}/player-page.js"></script>`,
     });
   },
 
@@ -75,7 +75,7 @@ export const views = {
         <button class="btn primary block" type="submit">Save new password</button>
       </form>
       <div class="done hidden"><p><strong>Your password has been changed.</strong></p><p>You can now sign in with your new password — or simply open ReachStudio from ReachLMS and sign in once.</p><a class="btn primary" href="/studio">Go to ReachStudio</a></div>
-      </div>`, { scripts: '<script type="module" src="/js/reset-page.js"></script>' });
+      </div>`, { scripts: `<script type="module" src="/js/v/${config.build}/reset-page.js"></script>` });
   },
 
   registered(name, clientId) {
