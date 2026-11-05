@@ -1,0 +1,10 @@
+{
+  "name": "Reach Studio demo",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:22",
+  "postCreateCommand": "npm install",
+  "postAttachCommand": "npm run demo",
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": { "label": "Reach Studio demo", "onAutoForward": "openBrowser" }
+  }
+}
