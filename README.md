@@ -79,7 +79,7 @@ Every type has a full description (what it is, what it's good for, what learners
 
 **Roles:**
 - **Teacher (default):** their own library and builder.
-- **Admin:** an **Admin** tab with usage statistics, content by type and the connected ReachLMS sites, plus user management: view a user's content, suspend or reactivate, make admin, or delete the account and its content.
+- **Admin:** an **Admin** tab with usage statistics, content by type and the connected ReachLMS sites, plus user management: see a user's usage, suspend or reactivate, make admin, create a password reset link, or delete the account and its content.
 - **Passwords and recovery:**
   - The account menu (click your avatar) has **Change password**. When ReachLMS has just confirmed who you are, you don't need your current password; otherwise you do.
   - **Forgot your password?** If you've opened ReachStudio from ReachLMS before, opening it from ReachLMS again lets you choose a new password. This works because signing out keeps the ReachLMS link but stops automatic sign-in.
@@ -93,15 +93,36 @@ Every player works with mouse, touch and keyboard. Drag interactions also suppor
 
 | Placement (registered automatically) | Message type | What it does in ReachLMS |
 |---|---|---|
-| `editor_button` | Deep Linking | ReachStudio button in the RCE. Inserts an `ltiResourceLink` with an `iframe` size, so content shows inline in pages, assignments, quizzes and discussions |
-| `assignment_selection` | Deep Linking | *Assignment → Submission type → External Tool*. Scored content includes a `lineItem`, so ReachLMS creates a graded assignment |
-| `link_selection` | Deep Linking | *Modules → Add item → External Tool* |
-| `course_navigation` | Resource Link | Optional "ReachStudio" course menu link for teachers. **Disabled by default**; teachers enable it in *Settings → Navigation* |
+| `editor_button` | Deep Linking | ReachStudio button in the RCE. Opens a 1200×900 pop-up (capped to the window). Inserts an `ltiResourceLink` with an `iframe` size, so content shows inline in pages, assignments, quizzes and discussions |
+| `assignment_selection` | Deep Linking | *Assignment → Submission type → External Tool → Find → ReachStudio*. Adds a `lineItem`, so the assignment is graded (see below) |
+| `submission_type_selection` | Deep Linking | **ReachStudio** listed directly in an assignment's *Submission type* menu. Same as above, one click shorter |
+| `link_selection` | Deep Linking | *Modules → Add item → External Tool* (not graded) |
+| `course_navigation` | Resource Link | Optional "ReachStudio" course menu link for teachers. Opens **inside ReachLMS** with the course menu still showing (`display_type: default`, never a new window). **Disabled by default**; teachers enable it in *Settings → Navigation* |
+
+### Graded assignments and SpeedGrader
+
+When ReachStudio content is an assignment's submission type, ReachStudio replaces the assignment's submit box. Students do the activity, then press **Submit**.
+
+- **Every attempt is a submission in SpeedGrader.**
+  - ReachStudio posts each attempt to the assignment's line item with Canvas's submission extension: `submission_type: basic_lti_launch`, with a link back to that attempt.
+  - When the lecturer opens SpeedGrader, ReachLMS launches that link. ReachStudio then shows a read-only snapshot of exactly what the student did: answers, drag-and-drop placements, typed text, and right or wrong markings.
+- **Auto-marked** (quizzes, drag and drop, fill in the blanks…): the score is sent with `gradingProgress: FullyGraded`, so the grade appears straight away.
+- **Lecturer-graded** (essays, or any item set to "By the lecturer"):
+  - The attempt is sent with `activityProgress: Submitted` and `gradingProgress: PendingManual` and no score, so SpeedGrader shows it as **Needs grading**.
+  - Resubmitting keeps a grade the lecturer already gave (`preserve_score`).
+  - Items with no right answers (hotspots, flashcards…) are always lecturer-graded.
+- **Grading tab** in the builder: automatic or by the lecturer, points (for lecturer grading), attempts allowed (1–10 or unlimited), best or latest score, and whether students may use "Show answers". The attempt limit is enforced by the server.
+- **During an assignment:** the activities' own "Try again" and "Show answers" buttons are hidden. A new attempt starts fresh from the assignment bar, while attempts remain.
+- **Lecturer view:** a lecturer opening the assignment sees a lecturer view, with **Student submissions** listing every student's attempts and their work.
+- **Security of snapshots:**
+  - Snapshots are stripped of scripts and event handlers on the server.
+  - They are only ever shown in a sandboxed frame with scripts disabled.
+  - Only lecturers of that course, or the student who made the attempt, can open them.
 
 Standards used:
 - **Login and launch:** OIDC third-party login (`/lti/login`), then signed `id_token` validation (`/lti/launch`). The tool checks the signature against the platform's public keys, plus the issuer, audience, nonce (single use), version and deployment.
 - **Deep Linking 2.0:** responses are signed with the tool's own RSA key, published at `/.well-known/jwks.json`.
-- **Assignment and Grade Services (grades):** the tool gets an access token using its own signed key (`client_credentials` with `private_key_jwt`), then posts the score to `{lineitem}/scores`.
+- **Assignment and Grade Services (grades):** the tool gets an access token using its own signed key (`client_credentials` with `private_key_jwt`), then posts the score to `{lineitem}/scores`, with Canvas's `https://canvas.instructure.com/lti/submission` extension so each attempt becomes a SpeedGrader submission.
 - **Dynamic Registration:** at `/lti/register`. Manual JSON configuration is also available at `/lti/canvas-config.json`.
 - **Embed height:** embedded content tells ReachLMS its height (`lti.frameResize`), so iframes fit the content without scrollbars.
 - **No third-party cookies:** each launch gets its own short-lived session token, so the tool works in Safari and other browsers that block cookies inside iframes.

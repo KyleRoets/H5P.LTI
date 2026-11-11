@@ -69,7 +69,11 @@ try {
     assert.equal(jwks.keys.length, 1); assert.ok(!jwks.keys[0].d, 'no private key material');
     const cfg = await (await fetch(`${TOOL}/lti/canvas-config.json`)).json();
     const placements = cfg.extensions[0].settings.placements.map((p) => `${p.placement}:${p.message_type}`);
-    assert.deepEqual(placements, ['editor_button:LtiDeepLinkingRequest', 'assignment_selection:LtiDeepLinkingRequest', 'link_selection:LtiDeepLinkingRequest', 'course_navigation:LtiResourceLinkRequest']);
+    assert.deepEqual(placements, ['editor_button:LtiDeepLinkingRequest', 'assignment_selection:LtiDeepLinkingRequest', 'submission_type_selection:LtiDeepLinkingRequest', 'link_selection:LtiDeepLinkingRequest', 'course_navigation:LtiResourceLinkRequest']);
+    const byName = Object.fromEntries(cfg.extensions[0].settings.placements.map((p) => [p.placement, p]));
+    assert.equal(byName.editor_button.selection_width, 1200);
+    assert.equal(byName.course_navigation.display_type, 'default');
+    assert.ok(!byName.course_navigation.windowTarget, 'never a new window');
   });
 
   await step('rejects launches from an unregistered platform', async () => {
@@ -87,7 +91,10 @@ try {
     assert.match(html, /is registered/);
     const p = mock.state.registration.payload;
     const msgs = p['https://purl.imsglobal.org/spec/lti-tool-configuration'].messages;
-    assert.deepEqual(msgs.map((m) => m.placements[0]), ['editor_button', 'assignment_selection', 'link_selection', 'course_navigation']);
+    assert.deepEqual(msgs.map((m) => m.placements[0]), ['editor_button', 'assignment_selection', 'submission_type_selection', 'link_selection', 'course_navigation']);
+    assert.equal(msgs[0]['https://canvas.instructure.com/lti/launch_width'], 1200, 'large editor pop-up');
+    assert.equal(msgs[0]['https://canvas.instructure.com/lti/launch_height'], 900);
+    assert.equal(msgs.at(-1)['https://canvas.instructure.com/lti/display_type'], 'default', 'course navigation opens inside ReachLMS');
     assert.equal(p.token_endpoint_auth_method, 'private_key_jwt');
     assert.deepEqual(p.redirect_uris, [`${TOOL}/lti/launch`]);
   });
@@ -188,7 +195,7 @@ try {
     const a = mock.state.assignments[0];
     assert.equal(a.lineItem.scoreMaximum, 3);
     assert.equal(a.lineItem.label, 'Cell quiz (v2)');
-    assert.ok(!a.item.iframe, 'assignments launch full-frame');
+    assert.ok(a.item.iframe?.height > 0 && !a.item.window, 'assignments open inside the assignment page');
   });
 
   await step('student assignment launch shows the player and sends the grade via AGS', async () => {
@@ -196,16 +203,51 @@ try {
     assert.equal(l.status, 200, l.html);
     const b = boot(l.html);
     assert.equal(b.content.type, 'quiz'); assert.equal(b.graded, true); assert.equal(b.canEdit, false);
+    assert.equal(b.grading.mode, 'auto'); assert.equal(b.grading.max, 3);
     const s = api(b.token);
-    const forged = await s('POST', '/api/score', { score: 99 });
+    const nasty = '<div class="rs"><p>Answer<script>alert(1)</script><img src="x" onerror="alert(1)"><a href="javascript:alert(1)">x</a></p></div>';
+    const forged = await s('POST', '/api/score', { score: 99, snapshot: nasty });
     assert.equal(forged.body.score, 3, 'score is clamped to the maximum');
-    const r = await s('POST', '/api/score', { score: 2 });
-    assert.equal(r.body.passback, 'sent');
+    assert.equal(forged.body.passback, 'sent'); assert.equal(forged.body.used, 1);
+    const r = await s('POST', '/api/score', { score: 2, snapshot: '<div class="rs"><p>Second try</p></div>' });
+    assert.equal(r.body.passback, 'sent'); assert.equal(r.body.score, 2);
+    assert.equal(r.body.sent, 3, 'best attempt counts by default');
     const score = mock.state.assignments[0].scores['user-student-1'];
-    assert.equal(score.scoreGiven, 2); assert.equal(score.scoreMaximum, 3);
+    assert.equal(score.scoreGiven, 3); assert.equal(score.scoreMaximum, 3);
     assert.equal(score.activityProgress, 'Completed'); assert.equal(score.gradingProgress, 'FullyGraded');
+    const subs = mock.state.assignments[0].submissions['user-student-1'];
+    assert.equal(subs.length, 2, 'each attempt is a SpeedGrader submission');
+    assert.equal(subs[1].type, 'basic_lti_launch');
+    assert.match(subs[1].url, new RegExp(`^${TOOL}/lti/launch\\?review=${r.body.id}$`));
+    const status = await s('GET', '/api/assignment');
+    assert.equal(status.body.used, 2); assert.equal(status.body.counted, 3);
     const denied = await s('GET', '/api/contents');
     assert.equal(denied.status, 401, 'students have no library access');
+  });
+
+  await step('SpeedGrader opens the submitted attempt for the lecturer (sanitised snapshot)', async () => {
+    const l = await launch('rl:sg-0.user-student-1', 'teacher');
+    assert.equal(l.status, 200, l.html);
+    assert.match(l.html, /review-page\.js/);
+    const t = api(bootToken(l.html));
+    const { id } = (await t('GET', '/api/review')).body;
+    const r = await t('GET', `/api/submissions/${id}`);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.submission.name, 'Sam Student'); assert.equal(r.body.submission.attempt, 2);
+    assert.equal(r.body.attempts.length, 2);
+    const first = await t('GET', `/api/submissions/${r.body.attempts[0].id}`);
+    const snap = first.body.submission.snapshot;
+    assert.match(snap, /Answer/);
+    assert.doesNotMatch(snap, /<script|onerror|javascript:/i, 'active content is stripped');
+    // The lecturer opening the assignment itself gets the lecturer view and the results list.
+    const la = await launch('rl:assign-0', 'teacher');
+    const bt = boot(la.html);
+    assert.equal(bt.teacher, true); assert.equal(bt.graded, false);
+    const res = await api(bt.token)('GET', '/api/results');
+    assert.equal(res.body.students.length, 1); assert.equal(res.body.students[0].attempts.length, 2);
+    // Students can't list results.
+    const ls = await launch('rl:assign-0', 'student');
+    assert.equal((await api(boot(ls.html).token)('GET', '/api/results')).status, 403);
   });
 
   await step('student RCE embed launch renders without grading; owner sees an edit button', async () => {
@@ -253,6 +295,34 @@ try {
     assert.equal(mock.state.assignments.at(-1).lineItem.scoreMaximum, 2);
   });
 
+  await step('lecturer-graded assignment: PendingManual in SpeedGrader, attempts limit enforced', async () => {
+    const c = await teacher('POST', '/api/contents', { type: 'essay', title: 'Explain osmosis', data: { task: '<p>Explain osmosis.</p>', grading: { mode: 'manual', points: 20, attempts: 1 } } });
+    const l = await launch('dl:submission_type_selection');
+    const t = api(bootToken(l.html));
+    const r = await t('POST', '/api/embed', { contentId: c.body.id });
+    await fetch(r.body.returnUrl, { method: 'POST', body: form({ JWT: r.body.jwt }) });
+    const idx = mock.state.assignments.length - 1;
+    assert.equal(mock.state.assignments[idx].lineItem.scoreMaximum, 20, 'points from the Grading tab');
+    const ls = await launch(`rl:assign-${idx}`, 'student');
+    const b = boot(ls.html);
+    assert.equal(b.grading.mode, 'manual'); assert.equal(b.grading.attempts, 1);
+    const s = api(b.token);
+    const sub = await s('POST', '/api/score', { score: 5, snapshot: '<div class="rs"><textarea>Water moves…</textarea></div>' });
+    assert.equal(sub.status, 200); assert.equal(sub.body.score, null, 'no automatic score');
+    const sc = mock.state.assignments[idx].scores['user-student-1'];
+    assert.equal(sc.gradingProgress, 'PendingManual'); assert.equal(sc.activityProgress, 'Submitted');
+    assert.equal(sc.scoreGiven, undefined);
+    assert.equal(sc['https://canvas.instructure.com/lti/submission'].preserve_score, true, 'a grade already given is kept');
+    assert.equal(mock.state.assignments[idx].submissions['user-student-1'].length, 1);
+    const again = await s('POST', '/api/score', { snapshot: '<div class="rs">again</div>' });
+    assert.equal(again.status, 409, 'only one attempt allowed');
+    // Items with no right answers (hotspots) are lecturer-graded out of 10 points by default.
+    const l2 = await launch('dl:assignment_selection');
+    const r2 = await api(bootToken(l2.html))('POST', '/api/embed', { contentId: hotspotId });
+    await fetch(r2.body.returnUrl, { method: 'POST', body: form({ JWT: r2.body.jwt }) });
+    assert.equal(mock.state.assignments.at(-1).lineItem.scoreMaximum, 10);
+  });
+
   await step('admin view: ADMIN_EMAILS user is an admin; teachers are blocked from admin APIs', async () => {
     const me = await teacher('GET', '/api/me');
     assert.equal(me.body.user.role, 'admin');
@@ -261,7 +331,7 @@ try {
     assert.equal(stats.status, 200);
     assert.equal(stats.body.users, 2);
     assert.ok(stats.body.contents >= 3);
-    assert.equal(stats.body.gradesSent, 2, 'two scores were sent in the student step');
+    assert.equal(stats.body.gradesSent, 3, 'two auto-marked attempts and one lecturer-graded submission were sent');
     const users = await teacher('GET', '/api/admin/users');
     const row = users.body.find((u) => u.email === 'taylor@school.test');
     assert.ok(row.contents >= 3); assert.equal(row.linked, 1);
@@ -297,7 +367,7 @@ try {
     assert.equal((await t('GET', '/api/me')).body.user, null);
     const r = await t('POST', '/api/auth/login', { email: 'taylor@school.test', password: 'correct horse battery' });
     assert.equal(r.status, 200);
-    assert.equal((await t('GET', '/api/contents')).body.length, 3);
+    assert.equal((await t('GET', '/api/contents')).body.length, 4, 'quiz, hotspots, blanks and the essay');
   });
   const jpost = (p, body) => fetch(TOOL + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const loginAs = async (email, password) => { const r = await jpost('/api/auth/login', { email, password }); return { status: r.status, body: await r.json() }; };

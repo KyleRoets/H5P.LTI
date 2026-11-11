@@ -92,7 +92,7 @@ export default {
         if (!all) finish();
       }
     });
-    const retry = h('button', { class: 'btn hidden', type: 'button', onclick: () => { found.clear(); wrong = 0; done = false; board.classList.remove('reveal'); board.querySelectorAll('.rs-pin').forEach((p) => p.remove()); zoneEls.forEach((z) => z.classList.remove('found')); fb.replaceChildren(); status.classList.add('hidden'); retry.classList.add('hidden'); } }, icon('restore', { size: 16 }), h('span', {}, 'Try again'));
+    const retry = h('button', { class: 'btn hidden rs-retry', type: 'button', onclick: () => { found.clear(); wrong = 0; done = false; board.classList.remove('reveal'); board.querySelectorAll('.rs-pin').forEach((p) => p.remove()); zoneEls.forEach((z) => z.classList.remove('found')); fb.replaceChildren(); status.classList.add('hidden'); retry.classList.add('hidden'); } }, icon('restore', { size: 16 }), h('span', {}, 'Try again'));
     const giveUp = all && h('button', { class: 'btn', type: 'button', onclick: () => { if (!done) finish(); } }, icon('flag', { size: 16 }), h('span', {}, 'I\'m done'));
     status.classList.add('hidden');
     return h('div', {}, !isBlank(data.task) && richBlock(data.task, 'rs-instructions rs-task'),

@@ -31,7 +31,7 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
     registration: null, // { client_id, payload }
     deploymentId: 'deployment-1',
     page: [], // embedded content items in the course page (RCE)
-    assignments: [], // { id, title, lineItem, item, scores: {} }
+    assignments: [], // { id, title, lineItem, item, scores: {}, submissions: { [userId]: [...] } }
     issuedTokens: new Set(),
     log: [],
   };
@@ -99,7 +99,17 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
         accept_types: ['ltiResourceLink'], accept_presentation_document_targets: ['iframe', 'window'], accept_multiple: false, data: `opaque-${arg}`,
       };
     } else if (kind === 'rl') {
-      const [where, idx] = arg.split('-');
+      const where = arg.slice(0, arg.indexOf('-')); const idx = arg.slice(arg.indexOf('-') + 1);
+      if (where === 'sg') { // SpeedGrader: launch the student's latest submission URL as the lecturer
+        const ai = idx.slice(0, idx.indexOf('.')); const uid = idx.slice(idx.indexOf('.') + 1);
+        const sub = state.assignments[Number(ai)]?.submissions?.[uid]?.at(-1);
+        if (!sub?.url) return res.status(404).send('no submission');
+        claims['https://purl.imsglobal.org/spec/lti/claim/message_type'] = 'LtiResourceLinkRequest';
+        claims['https://purl.imsglobal.org/spec/lti/claim/resource_link'] = { id: `rl-assign-${ai}` };
+        claims['https://purl.imsglobal.org/spec/lti/claim/target_link_uri'] = sub.url;
+        claims['https://purl.imsglobal.org/spec/lti/claim/custom'] = state.assignments[Number(ai)].item.custom || {};
+        claims['https://www.instructure.com/placement'] = 'assignment_selection';
+      } else {
       const entry = where === 'page' ? state.page[Number(idx)] : state.assignments[Number(idx)];
       if (!entry) return res.status(404).send('no such link');
       const item = where === 'page' ? entry : entry.item;
@@ -114,6 +124,7 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
           lineitems: `${base}/api/lti/courses/1/line_items`,
           lineitem: `${base}/api/lti/courses/1/line_items/${idx}`,
         };
+      }
       }
     } else if (kind === 'nav') {
       claims['https://purl.imsglobal.org/spec/lti/claim/message_type'] = 'LtiResourceLinkRequest';
@@ -140,8 +151,8 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
       const items = payload['https://purl.imsglobal.org/spec/lti-dl/claim/content_items'] || [];
       const placement = req.query.placement;
       for (const item of items) {
-        if (placement === 'assignment_selection') {
-          state.assignments.push({ id: state.assignments.length, title: item.lineItem?.label || item.title, lineItem: item.lineItem || null, item, scores: {} });
+        if (placement === 'assignment_selection' || placement === 'submission_type_selection') {
+          state.assignments.push({ id: state.assignments.length, title: item.lineItem?.label || item.title, lineItem: item.lineItem || null, item, scores: {}, submissions: {} });
         } else state.page.push(item);
       }
       log(`deep link return (${placement}): ${items.map((i) => i.title).join(', ')} data=${payload['https://purl.imsglobal.org/spec/lti-dl/claim/data']}`);
@@ -170,8 +181,16 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
     if (!state.issuedTokens.has(tok)) return res.status(401).json({ error: 'unauthorized' });
     const a = state.assignments[Number(req.params.id)];
     if (!a) return res.status(404).json({ error: 'no line item' });
-    a.scores[req.body.userId] = req.body;
-    log(`score ${req.body.scoreGiven}/${req.body.scoreMaximum} for ${req.body.userId} on "${a.title}"`);
+    const b = req.body;
+    // Like Canvas: PendingManual/FullyGraded without scoreGiven clears the score unless preserve_score.
+    const ext = b['https://canvas.instructure.com/lti/submission'] || {};
+    const prev = a.scores[b.userId];
+    const score = b.scoreGiven !== undefined ? b.scoreGiven : (ext.preserve_score ? prev?.scoreGiven : undefined);
+    a.scores[b.userId] = { ...b, scoreGiven: score };
+    if (ext.new_submission !== false && ext.submission_type !== 'none' && ['Submitted', 'Completed'].includes(b.activityProgress)) {
+      (a.submissions[b.userId] ||= []).push({ type: ext.submission_type, url: ext.submission_data, at: ext.submitted_at, gradingProgress: b.gradingProgress, scoreGiven: b.scoreGiven });
+    }
+    log(`score ${b.scoreGiven ?? '—'}/${b.scoreMaximum} (${b.gradingProgress}) for ${b.userId} on "${a.title}"`);
     res.json({ resultUrl: `${base}/results/1` });
   });
 
@@ -184,9 +203,15 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
     const loginUrl = (hint) => `${toolUrl}/lti/login?${new URLSearchParams({ iss: base, login_hint: role, client_id: reg?.client_id || '', lti_deployment_id: state.deploymentId, target_link_uri: `${toolUrl}/lti/launch`, lti_message_hint: hint })}`;
     const regUrl = `${toolUrl}/lti/register?${new URLSearchParams({ openid_configuration: `${base}/api/lti/security/openid-configuration`, registration_token: state.regToken })}`;
     const pageEmbeds = state.page.map((item, i) => `<iframe class="embed" title="${esc(item.title)}" src="${esc(loginUrl(`rl:page-${i}`))}" style="width:100%;max-width:${item.iframe?.width || 800}px;height:${item.iframe?.height || 500}px"></iframe>`).join('');
+    const names = Object.fromEntries(Object.values(USERS).map((u) => [u.sub, u.name]));
     const assignments = state.assignments.map((a, i) => `<li><strong>${esc(a.title)}</strong> (${a.lineItem ? `${a.lineItem.scoreMaximum} pts` : 'ungraded'})
         — <button onclick="openModal('${esc(loginUrl(`rl:assign-${i}`))}')">Open</button>
-        ${Object.values(a.scores).map((s) => `<span class="score">Gradebook: ${s.scoreGiven}/${s.scoreMaximum}</span>`).join('')}</li>`).join('');
+        ${role === 'teacher' ? Object.entries(a.submissions || {}).map(([uid, subs]) => {
+          const s = a.scores[uid] || {}; const needs = subs.at(-1)?.gradingProgress === 'PendingManual';
+          return `<div class="sg">SpeedGrader · ${esc(names[uid] || uid)}: ${subs.length} submission${subs.length === 1 ? '' : 's'} ·
+            ${needs ? '<span class="needs">Needs grading</span>' : `<span class="score">${s.scoreGiven ?? '–'}/${s.scoreMaximum}</span>`}
+            <button class="sgbtn" onclick="openModal('${esc(loginUrl(`rl:sg-${i}.${uid}`))}')">Open in SpeedGrader</button></div>`;
+        }).join('') : Object.values(a.scores).map((s) => `<span class="score">Gradebook: ${s.scoreGiven ?? 'pending'}/${s.scoreMaximum}</span>`).join('')}</li>`).join('');
     res.send(`<!doctype html><html><head><meta charset="utf-8"><title>ReachLMS demo course</title><style>
       body{font-family:system-ui,sans-serif;margin:0;background:#f5f5f5;color:#2d3b45}
       header{background:#fff;color:#193B82;padding:10px 20px;display:flex;gap:16px;align-items:center;border-bottom:3px solid #278DDF}
@@ -195,9 +220,9 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
       .rce{border:1px solid #c7cdd1;border-radius:4px} .rce-bar{border-bottom:1px solid #c7cdd1;padding:6px;display:flex;gap:4px;background:#f5f5f5}
       .rce-bar button{border:1px solid transparent;background:none;padding:4px 8px;border-radius:3px;cursor:pointer;font-size:14px}
       .rce-bar button:hover{border-color:#c7cdd1;background:#fff} .rce-body{padding:12px;min-height:80px}
-      iframe.embed{border:1px solid #ddd;display:block;margin:10px 0} .score{background:#e3f6ec;color:#0f5f3c;padding:2px 8px;border-radius:9px;margin-left:6px}
+      iframe.embed{border:1px solid #ddd;display:block;margin:10px 0} .sg{margin:6px 0 0 18px;font-size:14px} .needs{background:#fff6e0;color:#6b4a0e;padding:2px 8px;border-radius:9px} .sgbtn{margin-left:6px} .score{background:#e3f6ec;color:#0f5f3c;padding:2px 8px;border-radius:9px;margin-left:6px}
       #modal{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;place-items:center;z-index:9}
-      #modal .box{background:#fff;width:min(1100px,96vw);height:min(720px,92vh);border-radius:6px;overflow:hidden;display:flex;flex-direction:column}
+      #modal .box{background:#fff;width:min(1200px,96vw);height:min(950px,95vh);border-radius:6px;overflow:hidden;display:flex;flex-direction:column}
       #modal .bar{padding:8px 12px;border-bottom:1px solid #ddd;display:flex;justify-content:space-between;font-weight:600}
       #modal iframe{flex:1;border:0;width:100%} .muted{color:#6b7780;font-size:14px}</style></head><body>
       <header><img src="${base}/logo.jpg" alt="ReachLMS"><span class="course">Biology 101 <span class="muted">(demo course)</span></span><span style="flex:1"></span>
@@ -210,7 +235,8 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
         <div class="rce-body">Welcome to the cells unit! <span class="muted">(Rich Content Editor — use the ReachStudio button to embed content.)</span></div></div>` : ''}
       <div id="page">${pageEmbeds || '<p class="muted">No embedded content yet.</p>'}</div>
       <h2>Assignments</h2>
-      ${role === 'teacher' && reg ? `<p><button id="new-assignment" onclick="openModal('${esc(loginUrl('dl:assignment_selection'))}')">+ Assignment → External Tool → ReachStudio</button></p>` : ''}
+      ${role === 'teacher' && reg ? `<p><button id="new-assignment" onclick="openModal('${esc(loginUrl('dl:assignment_selection'))}')">+ Assignment → External Tool → ReachStudio</button>
+        <button id="new-assignment-type" class="navbtn" onclick="openModal('${esc(loginUrl('dl:submission_type_selection'))}')">+ Assignment → Submission type: ReachStudio</button></p>` : ''}
       <ul>${assignments || '<li class="muted">None</li>'}</ul>
       ${role === 'teacher' && reg ? `<p><button class="navbtn" onclick="openModal('${esc(loginUrl('nav:course'))}')">Course navigation: ReachStudio</button></p>` : ''}
       </main>

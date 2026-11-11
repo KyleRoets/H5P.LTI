@@ -241,7 +241,7 @@ Use a sandbox or test course where you're the teacher.
 | # | Do this | You should see |
 |---|---|---|
 | 1 | Open **Pages → + Page** (or edit an existing page) | The ReachLMS editor |
-| 2 | In the editor toolbar click **ReachStudio**. If you don't see it, click the **plug icon (Apps)**, then **ReachStudio** | The studio pop-up: **Create your studio account** with your name and email filled in |
+| 2 | In the editor toolbar click **ReachStudio**. If you don't see it, click the **plug icon (Apps)**, then **ReachStudio** | A large studio pop-up (1200 × 900, or as much of the window as fits): **Create your studio account** with your name and email filled in |
 | 3 | Create your account | Your empty library, with a green "Insert mode" banner |
 | 4 | **+ Create new → Image Hotspots**, upload a picture, add 2 hotspots, **Save & insert** | The pop-up closes and a placeholder or preview of the content appears in the editor |
 | 5 | Click **Save** on the page | The page shows your interactive hotspot image, working |
@@ -254,14 +254,22 @@ Use a sandbox or test course where you're the teacher.
 2. Open the page from 4.1. **You should see** the content working, with no "Edit" button.
 3. Click **Leave Student View** when done.
 
-### 4.3 Graded activity
+### 4.3 Graded activity and SpeedGrader
 
 1. **Assignments → + Assignment.** Give it a name.
-2. **Submission Type:** **External Tool**, then **Find**, then **ReachStudio**.
-3. In the studio, create or pick a **Quiz** and click **Insert**. **You should see** the external tool box filled in, and the points set to the number of questions.
+2. **Submission Type:** choose **ReachStudio** from the list. If it isn't listed, choose **External Tool**, then **Find**, then **ReachStudio**. Leave **Load in a new tab** unticked, so students stay in ReachLMS.
+3. In the studio, create or pick a **Quiz**. Open its **Grading** tab to choose attempts and which score counts, then click **Insert**. **You should see** the tool filled in, and **Points** set to the quiz's score.
 4. **Save & Publish.**
-5. Go to **Student View**, open the assignment and complete the quiz. **You should see** "✓ Score x/y sent to the gradebook".
-6. **Leave Student View**, open **Grades**. **You should see** the Test Student's score in the assignment's column.
+5. Go to **Student View**, open the assignment and complete the quiz, then press **Submit** in the bar at the top. **You should see** "Submitted — you scored x / y", with a copy of the submitted work underneath.
+6. **Leave Student View** and open the assignment in **SpeedGrader**. **You should see** the Test Student's submission: the score filled in and, in the main panel, exactly what they did.
+7. Repeat with an **Essay** whose Grading tab is set to **By the lecturer**. In SpeedGrader it shows as **Needs grading**, with the student's text. Type a grade in SpeedGrader as usual.
+8. As the teacher, open the assignment itself. **You should see** a lecturer view with a **Student submissions** button listing everyone's attempts.
+
+**Already installed ReachStudio before this update?** ReachLMS saves a tool's settings when it is installed. To get the bigger editor pop-up and the **ReachStudio** submission type, install it again:
+- **Dynamic Registration (3.1):** run it again, then switch the new key on and turn off the old one.
+- **Manual key (3.2):** edit the key and re-enter the configuration URL.
+
+On the free Render plan you re-register after every deploy anyway.
 
 ### 4.4 Other places worth checking
 
@@ -269,6 +277,7 @@ Use a sandbox or test course where you're the teacher.
 - **Classic Quizzes:** the editor button works in a question's text.
 - **New Quizzes:** check whether the editor button appears. Some versions don't show external editor tools there.
 - **Modules → + → External Tool → ReachStudio:** adds an activity as a module item.
+- **Course menu:** in **Settings → Navigation**, drag **ReachStudio** into the visible list and **Save**. Clicking it opens your library inside the course, with the course menu still on the left (it never opens a new tab). Students don't see it.
 - **Phone:** open a page with embedded content on a phone. It should fit the screen and work by touch.
 
 If everything in Part 4 worked, it's ready for teachers.

@@ -1,5 +1,5 @@
 // ReachStudio single-page app: account, library, type gallery, builder, embed and admin view.
-import { h, makeApi, toast, modal, textField, iconBtn, styleEditor, scaledStage, clone } from './util.js';
+import { h, makeApi, toast, modal, textField, iconBtn, styleEditor, scaledStage, clone, segmentField, selectField, checkField } from './util.js';
 import { icon } from './icons.js';
 import { logo } from './brand.js';
 import { coverSvg } from './covers.js';
@@ -19,14 +19,17 @@ const state = {
 if (BOOT.token) store.set(BOOT.token);
 const api = makeApi(() => state.token);
 const app = document.getElementById('app');
-const inFrame = window.self !== window.top;
 const isAdmin = () => state.me?.user?.role === 'admin';
 
 const PLACEMENT_TEXT = {
   editor_button: 'Choose or create content to insert into your page, quiz or assignment.',
-  assignment_selection: 'Choose or create an activity for this assignment. Scored activities send grades to the gradebook automatically.',
+  assignment_selection: 'Choose or create an activity for this assignment. Each attempt a student submits appears in SpeedGrader — marked automatically or by you (see the Grading tab).',
+  submission_type_selection: 'Choose or create an activity for this assignment. Each attempt a student submits appears in SpeedGrader — marked automatically or by you (see the Grading tab).',
   link_selection: 'Choose or create an activity to add to this module.',
 };
+
+// Opened from an activity's "Edit" button in ReachLMS: offer a way back (same frame, never a new tab).
+const backToActivity = new URLSearchParams(location.search).has('back');
 
 window.addEventListener('beforeunload', (e) => { if (state.dirty) { e.preventDefault(); e.returnValue = ''; } });
 window.addEventListener('hashchange', () => route());
@@ -80,7 +83,7 @@ function topbar(active = '') {
       isAdmin() && h('a', { href: '#admin', class: active === 'admin' ? 'on' : '' }, icon('shield', { size: 16 }), h('span', {}, 'Admin'))),
     h('div', { class: 'spacer' }),
     l?.context && h('span', { class: 'ctx' }, icon('book', { size: 14 }), l.context),
-    u && inFrame && h('button', { class: 'btn ghost sm', type: 'button', title: 'Open ReachStudio in a full browser tab', onclick: openInNewTab }, icon('external', { size: 15 }), h('span', { class: 'hide-md' }, 'Full screen')),
+    backToActivity && h('button', { class: 'btn ghost sm', type: 'button', onclick: () => history.back() }, icon('arrow-left', { size: 15 }), h('span', {}, 'Back to the activity')),
     u && accountMenu(u, initials));
 }
 
@@ -127,13 +130,6 @@ function banner() {
   const l = state.me?.lti;
   if (!l?.canEmbed) return null;
   return h('div', { class: 'banner' }, icon('insert', { size: 16 }), h('strong', {}, 'Insert mode'), h('span', {}, PLACEMENT_TEXT[l.placement] || PLACEMENT_TEXT.editor_button));
-}
-
-async function openInNewTab() {
-  try {
-    const { token } = await api.post('/api/session/handoff');
-    window.open(`/studio?t=${encodeURIComponent(token)}${location.hash}`, '_blank', 'noopener');
-  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function signOut() {
@@ -545,7 +541,9 @@ function renderBuilder(doc) {
     tabsEl.replaceChildren(
       h('button', { type: 'button', role: 'tab', class: tab === 'content' ? 'on' : '', 'aria-selected': String(tab === 'content'), onclick: () => { tab = 'content'; drawEditor(); } }, icon('edit', { size: 15 }), h('span', {}, 'Content')),
       h('button', { type: 'button', role: 'tab', class: tab === 'style' ? 'on' : '', 'aria-selected': String(tab === 'style'), onclick: () => { tab = 'style'; drawEditor(); } }, icon('palette', { size: 15 }), h('span', {}, 'Appearance')),
+      h('button', { type: 'button', role: 'tab', class: tab === 'grading' ? 'on' : '', 'aria-selected': String(tab === 'grading'), onclick: () => { tab = 'grading'; drawEditor(); } }, icon('award', { size: 15 }), h('span', {}, 'Grading')),
       h('button', { type: 'button', role: 'tab', class: tab === 'about' ? 'on' : '', 'aria-selected': String(tab === 'about'), onclick: () => { tab = 'about'; drawEditor(); } }, icon('info', { size: 15 }), h('span', {}, 'About')));
+    if (tab === 'grading') { editorBody.replaceChildren(gradingPane(t, doc.data, ctx.onChange)); return; }
     editorBody.replaceChildren(
       tab === 'content' ? t.editor(doc.data, ctx)
         : tab === 'style' ? h('div', {}, h('p', { class: 'help top-help' }, 'Colours, font and size for this item. Embed width sets how wide it appears in ReachLMS — the preview shows exactly that size.'), styleEditor(doc.data, () => { ctx.onChange(); devHost.replaceChildren(deviceToggle((d) => { device = d; drawPreview(); }, () => device, widths())); }))
@@ -585,6 +583,40 @@ function renderBuilder(doc) {
     if (k === 's') { e.preventDefault(); save().then((s) => s && toast('Saved')); }
   };
   if (!doc.title) titleInput.focus();
+}
+
+// ---------------- grading settings (used when the item is an assignment) ----------------
+function gradingPane(t, data, onChange) {
+  const g = data.grading || (data.grading = {});
+  const host = h('div', { class: 'grading-pane' });
+  const info = h('div', { class: 'grading-info' });
+  const refreshInfo = debounce(async () => {
+    try {
+      const r = await api.post('/api/grading-info', { type: t.id, data });
+      info.replaceChildren(icon(r.mode === 'auto' ? 'check' : 'edit', { size: 16 }), h('span', {}, r.mode === 'auto'
+        ? `Marked automatically out of ${r.max} point${r.max === 1 ? '' : 's'}. Each submission appears in SpeedGrader with the score filled in.`
+        : `Graded by you in SpeedGrader, out of ${r.max} point${r.max === 1 ? '' : 's'}. Submissions show as "Needs grading".`));
+    } catch { info.replaceChildren(); }
+  }, 250);
+  const changed = () => { onChange(); draw(); };
+  const draw = () => {
+    const manual = !t.graded || g.mode === 'manual';
+    host.replaceChildren(...[
+      h('p', { class: 'help top-help' }, 'These settings apply when this item is added to a ReachLMS assignment (Submission type: ReachStudio, or External Tool). Students hand in each attempt with a Submit button, and it appears in SpeedGrader with a view of their work. Items embedded in pages are never graded.'),
+      info,
+      t.graded
+        ? segmentField('How is it graded?', g, 'mode', [['auto', 'Automatically', 'check'], ['manual', 'By the lecturer', 'edit']], changed, { showText: true, help: 'By the lecturer: the score is not sent — you grade each submission in SpeedGrader (useful for essays or practice).' })
+        : h('div', { class: 'note' }, icon('info', { size: 16 }), h('span', {}, `${t.name} has no right or wrong answers, so the lecturer grades submissions in SpeedGrader.`)),
+      manual && textField('Points', g, 'points', changed, { type: 'number', min: 1, max: 1000, placeholder: '10', help: 'The assignment is out of this many points.' }),
+      selectField('Attempts allowed', g, 'attempts', [['0', 'Unlimited'], ['1', '1 attempt'], ['2', '2 attempts'], ['3', '3 attempts'], ['5', '5 attempts'], ['10', '10 attempts']], changed),
+      !manual && String(g.attempts || '0') !== '1' && segmentField('Score that counts', g, 'keep', [['best', 'Best attempt'], ['latest', 'Latest attempt']], changed),
+      !manual && checkField('Let students see the correct answers ("Show answers" button)', g, 'showAnswers', changed, { help: 'Off by default for assignments, so answers can\'t be copied into a new attempt.' })].filter(Boolean));
+    if (g.mode === undefined && t.graded) g.mode = 'auto';
+    if (g.keep === undefined) g.keep = 'best';
+    refreshInfo();
+  };
+  draw();
+  return host;
 }
 
 // ---------------- embed (LTI deep linking response) ----------------

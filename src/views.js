@@ -33,11 +33,22 @@ export const views = {
       content: { id: content.id, type: content.type, title: content.title, data: JSON.parse(content.data) },
       canEdit: !!opts.canEdit,
       graded: !!opts.graded,
+      teacher: !!opts.teacher,
+      build: config.build,
+      grading: opts.grading || null,
       preview: !!opts.preview,
     };
     return shell(content.title, '<main id="player" class="player-root"></main>', {
       bodyClass: 'player-body',
       scripts: `<script>window.BOOT=${json(boot)}</script><script type="module" src="/js/v/${config.build}/player-page.js"></script>`,
+    });
+  },
+
+  // A submitted attempt, opened from SpeedGrader (or from the student's submission details).
+  review(token) {
+    return shell('Submission', '<main id="review" class="review-root"><div class="loading">Loading submission…</div></main>', {
+      bodyClass: 'player-body review-body',
+      scripts: `<script>window.BOOT=${json({ token, build: config.build })}</script><script type="module" src="/js/v/${config.build}/review-page.js"></script>`,
     });
   },
 

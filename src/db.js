@@ -115,6 +115,29 @@ db.exec(`CREATE TABLE IF NOT EXISTS password_resets (
   used_at INTEGER
 )`);
 
+// Graded attempts handed in from a ReachLMS assignment. Each one becomes a submission in
+// SpeedGrader, which opens /lti/launch?review=<id> to show the lecturer what the student did.
+db.exec(`CREATE TABLE IF NOT EXISTS submissions (
+  id TEXT PRIMARY KEY,
+  content_id TEXT NOT NULL,
+  platform_id INTEGER NOT NULL,
+  context_id TEXT,
+  resource_link_id TEXT,
+  lineitem TEXT,
+  sub TEXT NOT NULL,
+  user_name TEXT,
+  attempt INTEGER NOT NULL,
+  mode TEXT NOT NULL,
+  score REAL,
+  auto_score REAL,
+  max_score REAL NOT NULL,
+  sent_score REAL,
+  snapshot TEXT,
+  passback TEXT,
+  created_at TEXT DEFAULT (datetime('now'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS submissions_link ON submissions (platform_id, resource_link_id, sub)');
+
 export const newId = (bytes = 12) => crypto.randomBytes(bytes).toString('base64url');
 
 export function cleanupExpired() {

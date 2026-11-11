@@ -66,7 +66,9 @@ export default {
       ta.readOnly = true; check.classList.add('hidden'); retry.classList.remove('hidden');
       if (kws.length) ctx.report?.(score, kws.length);
     } }, icon('check', { size: 16 }), h('span', {}, 'Check'));
-    const retry = h('button', { class: 'btn hidden', type: 'button', onclick: () => { ta.readOnly = false; out.replaceChildren(); retry.classList.add('hidden'); check.classList.remove('hidden'); ta.focus(); } }, icon('edit', { size: 16 }), h('span', {}, 'Edit my answer'));
+    const retry = h('button', { class: 'btn hidden rs-retry', type: 'button', onclick: () => { ta.readOnly = false; out.replaceChildren(); retry.classList.add('hidden'); check.classList.remove('hidden'); ta.focus(); } }, icon('edit', { size: 16 }), h('span', {}, 'Edit my answer'));
+    // Graded by the lecturer: no automatic keyword feedback or sample answer before they grade it.
+    if (ctx.grading?.mode === 'manual') return h('div', {}, richBlock(data.task, 'rs-instructions rs-task'), ta, count);
     return h('div', {}, richBlock(data.task, 'rs-instructions rs-task'), ta, count, h('div', { class: 'rs-actions' }, check, retry), out);
   },
 };

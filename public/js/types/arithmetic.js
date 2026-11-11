@@ -93,7 +93,7 @@ export default {
       root.replaceChildren(h('div', { class: 'rs-result' },
         h('div', { class: 'big' }, `${score} / ${qs.length}`),
         h('p', {}, timedOut ? 'Time\'s up!' : `Finished in ${secs} seconds.`),
-        h('button', { class: 'btn', type: 'button', onclick: start }, icon('restore', { size: 16 }), h('span', {}, 'New questions'))));
+        h('button', { class: 'btn rs-retry', type: 'button', onclick: start }, icon('restore', { size: 16 }), h('span', {}, 'New questions'))));
       ctx.report?.(score, qs.length);
     };
     intro();

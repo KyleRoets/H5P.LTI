@@ -433,6 +433,46 @@ table.users td.num { font-variant-numeric: tabular-nums; }
 .rs .rs-accent-btn:hover, .rs .btn.primary:hover { filter: brightness(.93); background: var(--rs-accent); }
 .rs-toolbar { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-bottom: 8px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
 .graded-tag { display: inline-flex; gap: 5px; align-items: center; font-weight: 650; color: #136b47; }
+
+/* assignments: submit bar, submitted state, lecturer results, SpeedGrader review */
+body.rs-assignment .rs-retry, body.rs-no-reveal .rs-reveal { display: none !important; }
+.assign-bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; background: #F3F7FD; border: 1px solid #D8E4F5; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; position: sticky; top: 0; z-index: 5; }
+.assign-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13.5px; color: var(--muted); }
+.assign-tag { display: inline-flex; gap: 6px; align-items: center; font-weight: 750; color: var(--navy); }
+.assign-counted { color: #136b47; font-weight: 650; }
+.assign-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.assign-hint { font-size: 13px; color: var(--muted); }
+.assign-done { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; justify-items: start; margin-bottom: 14px; }
+.assign-done p { margin: 0; display: flex; gap: 8px; align-items: center; }
+.assign-done .muted { color: var(--muted); font-size: 13.5px; }
+.assign-snap h4 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.assign-note { display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); margin: -4px 2px 12px; }
+.warn { display: flex; gap: 8px; align-items: center; background: var(--amber-soft); color: #6b4a0e; border-radius: 10px; padding: 8px 12px; }
+.snapshot-frame { width: 100%; border: 1px solid var(--line); border-radius: 12px; background: #fff; display: block; min-height: 120px; }
+.snapshot-body .rs-drag, .snapshot-body .rs-sort-item { cursor: default; }
+.loading-sm { color: var(--muted); font-size: 13px; padding: 10px 0; }
+table.results { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.results th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+table.results td { padding: 8px; border-bottom: 1px solid var(--line-2); }
+table.results td.num { text-align: center; }
+.pill.pending { background: var(--amber-soft); color: #6b4a0e; }
+.sub-line { color: var(--muted); font-size: 13.5px; margin: 0 0 10px; }
+.review-root { padding: 14px; max-width: 1100px; margin: 0 auto; }
+.review-head { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.review-title { display: flex; gap: 10px; align-items: center; }
+.review-title h1 { font-size: 19px; margin: 0; color: var(--navy); }
+.review-title p { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
+.attempt-switch { font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.attempt-switch select { width: auto; }
+.review-grade { display: flex; gap: 10px; align-items: center; border-radius: 12px; padding: 10px 14px; margin-bottom: 12px; }
+.review-grade div { display: flex; flex-direction: column; }
+.review-grade span { font-size: 13px; }
+.review-grade.auto { background: var(--green-soft); color: #0f5f3c; }
+.review-grade.manual { background: var(--amber-soft); color: #6b4a0e; }
+.grading-pane { display: grid; gap: 4px; }
+.grading-info { display: flex; gap: 8px; align-items: flex-start; background: var(--sky-soft); color: #134d80; border-radius: 10px; padding: 9px 12px; font-size: 13.5px; margin-bottom: 8px; }
+.grading-info:empty { display: none; }
+.grading-pane .note { display: flex; gap: 8px; align-items: center; font-size: 13.5px; color: var(--muted); margin: 6px 0 10px; }
 .rs-instructions { color: inherit; opacity: .85; margin: 0 0 12px; }
 .rs-text p { margin: 0 0 .6em; }
 .rs-text p:last-child { margin-bottom: 0; }

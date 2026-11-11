@@ -59,7 +59,7 @@ export default {
       root.append(bar);
       if (idx >= sets.length) {
         root.append(h('div', { class: 'rs-result' }, h('div', { class: 'big' }, `${score} / ${sets.length}`), h('p', {}, 'Correct on the first try.'),
-          h('button', { class: 'btn', type: 'button', onclick: () => { summaryList.replaceChildren(); start(); } }, icon('restore', { size: 16 }), h('span', {}, 'Try again'))));
+          h('button', { class: 'btn rs-retry', type: 'button', onclick: () => { summaryList.replaceChildren(); start(); } }, icon('restore', { size: 16 }), h('span', {}, 'Try again'))));
         root.append(h('h4', { class: 'rs-summary-h' }, 'Your summary'), summaryList);
         ctx.report?.(score, sets.length);
         return;

@@ -130,7 +130,7 @@ export default {
       check.classList.add('hidden'); retry.classList.remove('hidden');
       ctx.report?.(total, max);
     } }, icon('check', { size: 16 }), h('span', {}, 'Check'));
-    const retry = h('button', { class: 'btn hidden', type: 'button', onclick: () => { rows.forEach((r) => { r.input.readOnly = false; r.result.replaceChildren(); }); score.classList.add('hidden'); retry.classList.add('hidden'); check.classList.remove('hidden'); } }, icon('restore', { size: 16 }), h('span', {}, 'Try again'));
+    const retry = h('button', { class: 'btn hidden rs-retry', type: 'button', onclick: () => { rows.forEach((r) => { r.input.readOnly = false; r.result.replaceChildren(); }); score.classList.add('hidden'); retry.classList.add('hidden'); check.classList.remove('hidden'); } }, icon('restore', { size: 16 }), h('span', {}, 'Try again'));
     return h('div', { class: 'rs-dict' }, !isBlank(data.task) && richBlock(data.task, 'rs-instructions rs-task'), rows.map((r) => r.el), h('div', { class: 'rs-actions' }, check, retry, score),
       h('p', { class: 'rs-legend' }, h('span', { class: 'w ok' }, 'correct'), ' ', h('span', { class: 'w missing' }, 'missing'), ' ', h('span', { class: 'w extra' }, 'not in the sentence')));
   },

@@ -75,7 +75,7 @@ export default {
           h('div', { class: `result-badge ${pass ? 'pass' : 'fail'}` }, icon(pass ? 'award' : 'restore', { size: 28 })),
           h('div', { class: 'big' }, `${score} / ${order.length}`),
           h('p', { class: pass ? 'pass' : 'fail' }, `${pct}% · ${pass ? 'Passed' : 'Not passed yet'}`),
-          h('button', { class: 'btn', type: 'button', onclick: start }, icon('restore', { size: 16 }), h('span', {}, 'Try again'))));
+          h('button', { class: 'btn rs-retry', type: 'button', onclick: start }, icon('restore', { size: 16 }), h('span', {}, 'Try again'))));
         ctx.report?.(score, order.length);
         return;
       }

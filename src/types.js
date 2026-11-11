@@ -48,4 +48,25 @@ export function embedSize(type, data) {
   return { width: w, height: Math.round((def.height * w) / def.width) };
 }
 
+/**
+ * How an item is graded when it is used as a ReachLMS assignment (Submission type: External Tool).
+ * auto   = ReachStudio marks it and sends the score (quizzes, drag and drop, …).
+ * manual = the lecturer grades it in SpeedGrader (essays, or anything without right answers).
+ * attempts: 0 = unlimited. keep: which score counts when there are several attempts.
+ */
+export function gradingFor(type, data = {}) {
+  const autoMax = TYPES[type]?.maxScore ? TYPES[type].maxScore(data) : 0;
+  const g = data.grading || {};
+  const mode = autoMax > 0 && g.mode !== 'manual' ? 'auto' : 'manual';
+  const points = Math.max(1, Math.min(1000, Math.round(Number(g.points) || 10)));
+  return {
+    mode,
+    autoMax,
+    max: mode === 'auto' ? autoMax : points,
+    attempts: Math.max(0, Math.min(20, Math.round(Number(g.attempts) || 0))),
+    keep: g.keep === 'latest' ? 'latest' : 'best',
+    showAnswers: !!g.showAnswers,
+  };
+}
+
 export const isType = (t) => Object.prototype.hasOwnProperty.call(TYPES, t);

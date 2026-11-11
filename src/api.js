@@ -8,11 +8,11 @@ import { db, newId } from './db.js';
 import { config } from './config.js';
 import { createSession, getSession, setSessionUser, deleteSession, tokenFrom, requireSession, requireUser } from './sessions.js';
 import { buildDeepLinkResponse, postScore } from './lti.js';
-import { TYPES, isType } from './types.js';
+import { TYPES, isType, gradingFor } from './types.js';
 import { views } from './views.js';
 
 export const apiRouter = express.Router();
-apiRouter.use('/api', express.json({ limit: '2mb' }));
+apiRouter.use('/api', express.json({ limit: '4mb' }));
 
 const publicUser = (u) => (u ? { id: u.id, name: u.name, email: u.email, role: u.role, status: u.status } : null);
 
@@ -319,28 +319,147 @@ apiRouter.post('/api/embed', requireUser, async (req, res) => {
   }
 });
 
-// ---------- scores (AGS passback for graded assignment launches) ----------
+// ---------- graded attempts (ReachLMS assignments → gradebook + SpeedGrader) ----------
+const MAX_SNAPSHOT = 1_500_000;
+/**
+ * The snapshot is the activity as the student left it (their answers, marked right/wrong), saved
+ * as HTML so SpeedGrader can show it. It is only ever displayed in a sandboxed frame with scripts
+ * disabled; this strips active content as a second line of defence.
+ */
+export function cleanSnapshot(html) {
+  return String(html || '').slice(0, MAX_SNAPSHOT)
+    .replace(/<\s*(script|style|iframe|object|embed|frame|frameset|base|meta|link|form|noscript|template)\b[\s\S]*?(<\s*\/\s*\1\s*>|$)/gi, '')
+    .replace(/<\s*\/?\s*(script|iframe|object|embed|frame|frameset|base|meta|link|form|noscript|template)\b[^>]*>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/\s(href|src|xlink:href|action|formaction|srcset)\s*=\s*("|')\s*(javascript|data|vbscript):[^"']*\2/gi, '')
+    .replace(/\s(href|src|xlink:href|action|formaction)\s*=\s*(javascript|data|vbscript):[^\s>]*/gi, '');
+}
+
+const linkKey = (lti) => lti.resourceLinkId || `content:${lti.contentId}`;
+const mySubs = (lti) => db.prepare('SELECT id, attempt, mode, score, auto_score, max_score, sent_score, passback, created_at FROM submissions WHERE platform_id = ? AND resource_link_id = ? AND sub = ? ORDER BY attempt')
+  .all(lti.platformId, linkKey(lti), lti.sub);
+
+function summary(lti, grading) {
+  const list = mySubs(lti);
+  const used = list.length;
+  const scored = list.filter((x) => x.score !== null);
+  const best = scored.length ? Math.max(...scored.map((x) => x.score)) : null;
+  const last = list.at(-1) || null;
+  return {
+    grading,
+    used,
+    remaining: grading.attempts ? Math.max(0, grading.attempts - used) : null,
+    best,
+    counted: grading.keep === 'latest' ? (last?.score ?? null) : best,
+    last: last && { id: last.id, attempt: last.attempt, score: last.score, max: last.max_score, mode: last.mode, at: last.created_at, passback: last.passback },
+  };
+}
+
+// What the Grading tab will produce (points and mode), computed by the same code the server grades with.
+apiRouter.post('/api/grading-info', requireUser, (req, res) => {
+  if (!isType(req.body?.type)) return res.status(400).json({ error: 'Unknown content type.' });
+  const g = gradingFor(req.body.type, req.body.data || {});
+  res.json({ mode: g.mode, max: g.max, autoMax: g.autoMax });
+});
+
+// Status of the student's work on this assignment (attempts used, score that counts…).
+apiRouter.get('/api/assignment', requireSession, (req, res) => {
+  const lti = req.session.lti;
+  if (lti?.kind !== 'player' || !lti.ags) return res.json({ graded: false });
+  const c = db.prepare('SELECT * FROM contents WHERE id = ?').get(lti.contentId);
+  if (!c) return res.status(404).json({ error: 'Content not found.' });
+  res.json({ graded: true, ...summary(lti, gradingFor(c.type, JSON.parse(c.data))) });
+});
+
+/**
+ * Hand in an attempt. Body: { score (auto-marked types), snapshot (HTML of the finished activity) }.
+ * Outside an assignment (an embed on a page) the score is only recorded for statistics.
+ */
 apiRouter.post('/api/score', requireSession, async (req, res) => {
   const lti = req.session.lti;
   if (lti?.kind !== 'player') return res.status(400).json({ error: 'Not a player session.' });
   const c = db.prepare('SELECT * FROM contents WHERE id = ?').get(lti.contentId);
   if (!c) return res.status(404).json({ error: 'Content not found.' });
-  const max = TYPES[c.type].maxScore(JSON.parse(c.data));
-  const score = Math.max(0, Math.min(max, Number(req.body?.score) || 0));
-  let passback = 'none';
-  if (lti.ags?.lineitem && max > 0) {
-    const platform = db.prepare('SELECT * FROM platforms WHERE id = ?').get(lti.platformId);
-    try {
-      await postScore(platform, lti.ags.lineitem, lti.sub, score, max);
-      passback = 'sent';
-    } catch (e) {
-      console.error(e);
-      passback = 'failed';
+  const grading = gradingFor(c.type, JSON.parse(c.data));
+  const raw = Number(req.body?.score);
+  const autoScore = grading.autoMax > 0 && Number.isFinite(raw) ? Math.max(0, Math.min(grading.autoMax, raw)) : null;
+
+  if (!lti.ags) { // not an assignment: keep the old lightweight statistics only
+    if (grading.autoMax > 0) {
+      db.prepare('INSERT INTO attempts (content_id, platform_id, sub, score, max_score, passback) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(c.id, lti.platformId, lti.sub, autoScore ?? 0, grading.autoMax, 'none');
     }
+    return res.json({ score: autoScore ?? 0, max: grading.autoMax, passback: 'none' });
   }
+
+  const before = summary(lti, grading);
+  if (grading.attempts && before.used >= grading.attempts) {
+    return res.status(409).json({ error: `You have used all ${grading.attempts} attempt${grading.attempts === 1 ? '' : 's'} for this assignment.`, ...before });
+  }
+
+  const id = newId(16);
+  const attempt = before.used + 1;
+  const score = grading.mode === 'auto' ? (autoScore ?? 0) : null;
+  // Score sent to the gradebook: this attempt, or the best so far.
+  let sent = score;
+  if (score !== null && grading.keep === 'best' && before.best !== null) sent = Math.max(score, before.best);
+  db.prepare(`INSERT INTO submissions (id, content_id, platform_id, context_id, resource_link_id, lineitem, sub, user_name, attempt, mode, score, auto_score, max_score, sent_score, snapshot, passback)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`)
+    .run(id, c.id, lti.platformId, lti.contextId, linkKey(lti), lti.ags.lineitem, lti.sub, lti.name || '', attempt, grading.mode, score, autoScore, grading.max, sent, cleanSnapshot(req.body?.snapshot));
+
+  let passback = 'sent';
+  try {
+    const platform = db.prepare('SELECT * FROM platforms WHERE id = ?').get(lti.platformId);
+    await postScore(platform, lti.ags.lineitem, {
+      sub: lti.sub, scoreGiven: sent, scoreMaximum: grading.max, mode: grading.mode,
+      reviewUrl: `${config.publicUrl}/lti/launch?review=${id}`,
+    });
+  } catch (e) {
+    console.error(e);
+    passback = 'failed';
+  }
+  db.prepare('UPDATE submissions SET passback = ? WHERE id = ?').run(passback, id);
   db.prepare('INSERT INTO attempts (content_id, platform_id, sub, score, max_score, passback) VALUES (?, ?, ?, ?, ?, ?)')
-    .run(c.id, lti.platformId, lti.sub, score, max, passback);
-  res.json({ score, max, passback });
+    .run(c.id, lti.platformId, lti.sub, score ?? 0, grading.max, passback);
+  res.json({ id, score, sent, max: grading.max, mode: grading.mode, passback, ...summary(lti, grading) });
+});
+
+// One submitted attempt with its snapshot: for the lecturer (SpeedGrader / results list) or the student who made it.
+function canSeeSubmission(session, sub) {
+  const l = session.lti;
+  if (!l || !sub || sub.platform_id !== l.platformId) return false;
+  if (l.kind === 'review') return l.reviewSub === sub.sub && l.reviewLink === sub.resource_link_id;
+  if (l.kind === 'player' && l.teacherAssignment) return sub.resource_link_id === linkKey(l);
+  if (l.kind === 'player' && l.ags) return sub.sub === l.sub && sub.resource_link_id === linkKey(l);
+  return false;
+}
+const subOut = (x, withSnapshot) => ({
+  id: x.id, attempt: x.attempt, mode: x.mode, score: x.score, autoScore: x.auto_score, max: x.max_score, sent: x.sent_score,
+  passback: x.passback, at: x.created_at, name: x.user_name, ...(withSnapshot ? { snapshot: x.snapshot || '' } : {}),
+});
+apiRouter.get('/api/submissions/:id', requireSession, (req, res) => {
+  const x = db.prepare('SELECT * FROM submissions WHERE id = ?').get(req.params.id);
+  if (!canSeeSubmission(req.session, x)) return res.status(404).json({ error: 'Submission not found.' });
+  const c = db.prepare('SELECT id, type, title FROM contents WHERE id = ?').get(x.content_id);
+  // The other attempts by the same student on the same assignment, for switching between them.
+  const all = db.prepare('SELECT * FROM submissions WHERE platform_id = ? AND resource_link_id = ? AND sub = ? ORDER BY attempt').all(x.platform_id, x.resource_link_id, x.sub);
+  res.json({ submission: subOut(x, true), content: c && { id: c.id, type: c.type, title: c.title }, attempts: all.map((a) => subOut(a, false)) });
+});
+
+// Which submission a SpeedGrader launch opened.
+apiRouter.get('/api/review', requireSession, (req, res) => {
+  if (req.session.lti?.kind !== 'review') return res.status(400).json({ error: 'Not a submission view.' });
+  res.json({ id: req.session.lti.reviewId });
+});
+
+// Lecturer view inside the assignment: every student's attempts.
+apiRouter.get('/api/results', requireSession, (req, res) => {
+  const l = req.session.lti;
+  if (!(l?.kind === 'player' && l.teacherAssignment)) return res.status(403).json({ error: 'Only lecturers can see results.' });
+  const rows = db.prepare('SELECT * FROM submissions WHERE platform_id = ? AND resource_link_id = ? ORDER BY sub, attempt').all(l.platformId, linkKey(l));
+  const bySub = new Map();
+  rows.forEach((r) => { if (!bySub.has(r.sub)) bySub.set(r.sub, []); bySub.get(r.sub).push(subOut(r, false)); });
+  res.json({ students: [...bySub.values()].map((list) => ({ name: list.at(-1).name || 'Student', attempts: list })) });
 });
 
 // ---------- previews (owner only) ----------

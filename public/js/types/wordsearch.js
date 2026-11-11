@@ -125,7 +125,7 @@ export default {
       if (mv) { e.preventDefault(); const n = cellAt(Math.min(W.size - 1, Math.max(0, r + mv[0])), Math.min(W.size - 1, Math.max(0, c + mv[1]))); el.tabIndex = -1; n.tabIndex = 0; n.focus(); if (anchor) { const p = line(anchor, pos(n)); if (p) { path = p; paint(path); } } }
       if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!anchor) { anchor = { r, c }; path = [anchor]; paint(path); } else { path = line(anchor, { r, c }) || []; if (path.length > 1) commit(); else { anchor = null; paint([]); } } }
     });
-    const reveal = h('button', { class: 'btn', type: 'button', onclick: () => { W.placed.forEach((p) => { if (!found.has(p.word)) for (let k = 0; k < p.word.length; k++) cellAt(p.r + p.dr * k, p.c + p.dc * k).classList.add('missed'); }); ctx.report?.(found.size, W.placed.length); reveal.disabled = true; } }, icon('eye', { size: 16 }), h('span', {}, 'Show the words'));
+    const reveal = h('button', { class: 'btn rs-reveal', type: 'button', onclick: () => { W.placed.forEach((p) => { if (!found.has(p.word)) for (let k = 0; k < p.word.length; k++) cellAt(p.r + p.dr * k, p.c + p.dc * k).classList.add('missed'); }); ctx.report?.(found.size, W.placed.length); reveal.disabled = true; } }, icon('eye', { size: 16 }), h('span', {}, 'Show the words'));
     return h('div', { class: 'rs-ws' }, !isBlank(data.task) && richBlock(data.task, 'rs-instructions rs-task'),
       h('div', { class: 'rs-ws-body' }, grid, data.showList !== false && h('div', { class: 'rs-ws-side' }, h('h4', {}, 'Find these words'), listEl)),
       h('div', { class: 'rs-actions' }, reveal, status),

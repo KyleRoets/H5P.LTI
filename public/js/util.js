@@ -215,12 +215,13 @@ export function segmentField(label, obj, key, options, onChange, opts = {}) {
     onclick: () => { obj[key] = v; onChange(); draw(); opts.after?.(); },
   }, ic && icon(ic, { size: 16 }), (!ic || opts.showText) && h('span', {}, t))));
   draw();
-  return h('div', { class: 'field' }, h('div', { class: 'label' }, label), wrap);
+  return h('div', { class: 'field' }, h('div', { class: 'label' }, label), wrap, opts.help && h('p', { class: 'help' }, opts.help));
 }
 
 export function checkField(label, obj, key, onChange, opts = {}) {
   return h('div', { class: 'field' }, h('label', { class: 'check' },
-    h('input', { type: 'checkbox', checked: !!obj[key], onchange: (e) => { obj[key] = e.target.checked; onChange(); opts.after?.(); } }), h('span', {}, label)));
+    h('input', { type: 'checkbox', checked: !!obj[key], onchange: (e) => { obj[key] = e.target.checked; onChange(); opts.after?.(); } }), h('span', {}, label)),
+    opts.help && h('p', { class: 'help' }, opts.help));
 }
 
 export const SWATCHES = ['#193B82', '#278DDF', '#0E8AA0', '#1F9D6A', '#4E9A2E', '#D9940C', '#E0702E', '#D23B6B', '#B8326E', '#6C4EE0', '#47587A', '#1D2433', '#FFFFFF', '#F4F6FA', '#FFF4D6', '#E3F6EC'];
@@ -237,7 +238,7 @@ export function colorField(label, obj, key, onChange, opts = {}) {
         h('input', { type: 'color', value: /^#[0-9a-f]{6}$/i.test(cur) ? cur : '#278ddf', 'aria-label': `Custom ${label}`, oninput: (e) => { obj[key] = e.target.value; onChange(); }, onchange: draw }))].filter(Boolean));
   };
   draw();
-  return h('div', { class: 'field' }, h('div', { class: 'label' }, label), wrap);
+  return h('div', { class: 'field' }, h('div', { class: 'label' }, label), wrap, opts.help && h('p', { class: 'help' }, opts.help));
 }
 
 /** Image / media field with upload + URL. ctx.api is required for upload. */
@@ -637,8 +638,8 @@ export function dragSystem(root, { onDrop }) {
 /** Standard check / retry / solution action row. */
 export function actionRow({ onCheck, onRetry, onShow }) {
   const check = h('button', { class: 'btn primary rs-accent-btn', type: 'button', onclick: () => onCheck() }, icon('check', { size: 16 }), h('span', {}, 'Check'));
-  const retry = h('button', { class: 'btn hidden', type: 'button', onclick: () => onRetry() }, icon('restore', { size: 16 }), h('span', {}, 'Try again'));
-  const show = onShow && h('button', { class: 'btn hidden', type: 'button', onclick: () => onShow() }, icon('eye', { size: 16 }), h('span', {}, 'Show answers'));
+  const retry = h('button', { class: 'btn hidden rs-retry', type: 'button', onclick: () => onRetry() }, icon('restore', { size: 16 }), h('span', {}, 'Try again'));
+  const show = onShow && h('button', { class: 'btn hidden rs-reveal', type: 'button', onclick: () => onShow() }, icon('eye', { size: 16 }), h('span', {}, 'Show answers'));
   const score = h('span', { class: 'rs-score hidden' });
   return {
     el: h('div', { class: 'rs-actions' }, check, retry, show, score),

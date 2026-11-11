@@ -12,7 +12,7 @@ import { config, internalUrl } from './config.js';
 import { signingKey, publicJwks } from './keys.js';
 import { createSession } from './sessions.js';
 import { views } from './views.js';
-import { TYPES, embedSize } from './types.js';
+import { TYPES, embedSize, gradingFor } from './types.js';
 
 const C = {
   MSG: 'https://purl.imsglobal.org/spec/lti/claim/message_type',
@@ -20,6 +20,7 @@ const C = {
   DEP: 'https://purl.imsglobal.org/spec/lti/claim/deployment_id',
   ROLES: 'https://purl.imsglobal.org/spec/lti/claim/roles',
   CTX: 'https://purl.imsglobal.org/spec/lti/claim/context',
+  RL: 'https://purl.imsglobal.org/spec/lti/claim/resource_link',
   CUSTOM: 'https://purl.imsglobal.org/spec/lti/claim/custom',
   TARGET: 'https://purl.imsglobal.org/spec/lti/claim/target_link_uri',
   DL: 'https://purl.imsglobal.org/spec/lti-dl/claim/deep_linking_settings',
@@ -66,6 +67,9 @@ function isInstructor(roles = []) {
 }
 
 // ---------- tool configuration (manual install + dynamic registration) ----------
+// Canvas reads the pop-up size for the editor and assignment pickers from launch_width/height
+// (it maps them to selection_width/height). Without them the editor dialog is a small 800×550.
+const PICKER = { 'https://canvas.instructure.com/lti/launch_width': 1200, 'https://canvas.instructure.com/lti/launch_height': 900 };
 function messages() {
   return [
     {
@@ -74,6 +78,7 @@ function messages() {
       label: config.toolName,
       icon_uri: iconUrl(),
       placements: ['editor_button'],
+      ...PICKER,
     },
     {
       type: 'LtiDeepLinkingRequest',
@@ -81,6 +86,16 @@ function messages() {
       label: `${config.toolName} activity`,
       icon_uri: iconUrl(),
       placements: ['assignment_selection'],
+      ...PICKER,
+    },
+    {
+      // Shows "ReachStudio" in an assignment's Submission Type list (next to External Tool).
+      type: 'LtiDeepLinkingRequest',
+      target_link_uri: url('/lti/launch?placement=submission_type_selection'),
+      label: config.toolName,
+      icon_uri: iconUrl(),
+      placements: ['submission_type_selection'],
+      ...PICKER,
     },
     {
       type: 'LtiDeepLinkingRequest',
@@ -88,6 +103,7 @@ function messages() {
       label: `${config.toolName} activity`,
       icon_uri: iconUrl(),
       placements: ['link_selection'],
+      ...PICKER,
     },
     {
       type: 'LtiResourceLinkRequest',
@@ -97,6 +113,8 @@ function messages() {
       placements: ['course_navigation'],
       roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'],
       'https://canvas.instructure.com/lti/course_navigation/default_enabled': false,
+      // Open inside ReachLMS, with the course menu still showing (never a new window).
+      'https://canvas.instructure.com/lti/display_type': 'default',
     },
   ];
 }
@@ -146,10 +164,11 @@ export function canvasJsonConfig() {
         text: config.toolName,
         icon_url: iconUrl(),
         placements: [
-          { placement: 'editor_button', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=editor_button'), text: config.toolName, icon_url: iconUrl(), selection_width: 1100, selection_height: 720 },
-          { placement: 'assignment_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=assignment_selection'), text: `${config.toolName} activity`, selection_width: 1100, selection_height: 720 },
-          { placement: 'link_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=link_selection'), text: `${config.toolName} activity`, selection_width: 1100, selection_height: 720 },
-          { placement: 'course_navigation', message_type: 'LtiResourceLinkRequest', target_link_uri: url('/lti/launch?placement=course_navigation'), text: config.toolName, default: 'disabled', required_permissions: 'manage_course_content_add' },
+          { placement: 'editor_button', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=editor_button'), text: config.toolName, icon_url: iconUrl(), selection_width: 1200, selection_height: 900 },
+          { placement: 'assignment_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=assignment_selection'), text: `${config.toolName} activity`, selection_width: 1200, selection_height: 900 },
+          { placement: 'submission_type_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=submission_type_selection'), text: config.toolName, description: 'Interactive activity graded automatically or in SpeedGrader', require_resource_selection: true, selection_width: 1200, selection_height: 900 },
+          { placement: 'link_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=link_selection'), text: `${config.toolName} activity`, selection_width: 1200, selection_height: 900 },
+          { placement: 'course_navigation', message_type: 'LtiResourceLinkRequest', target_link_uri: url('/lti/launch?placement=course_navigation'), text: config.toolName, default: 'disabled', display_type: 'default', required_permissions: 'manage_course_content_add' },
         ],
       },
     }],
@@ -184,32 +203,49 @@ export async function getAccessToken(platform, scopes) {
   return body.access_token;
 }
 
-export async function postScore(platform, lineitem, sub, scoreGiven, scoreMaximum) {
+/**
+ * Sends a result to the ReachLMS gradebook and creates a submission in SpeedGrader.
+ * auto:   activityProgress Completed + gradingProgress FullyGraded with the score.
+ * manual: activityProgress Submitted + gradingProgress PendingManual and no score, so the
+ *         submission shows as "needs grading" (a grade the lecturer already gave is kept).
+ * reviewUrl is stored as a basic_lti_launch submission: SpeedGrader launches it to show the attempt.
+ */
+export async function postScore(platform, lineitem, { sub, scoreGiven, scoreMaximum, mode = 'auto', reviewUrl, submittedAt = new Date() }) {
   const token = await getAccessToken(platform, ['https://purl.imsglobal.org/spec/lti-ags/scope/score']);
   const u = new URL(lineitem);
   u.pathname = u.pathname.replace(/\/$/, '') + '/scores';
+  const manual = mode === 'manual';
+  const body = {
+    userId: sub,
+    scoreMaximum,
+    activityProgress: manual ? 'Submitted' : 'Completed',
+    gradingProgress: manual ? 'PendingManual' : 'FullyGraded',
+    timestamp: new Date().toISOString(),
+    'https://canvas.instructure.com/lti/submission': {
+      new_submission: true,
+      submission_type: reviewUrl ? 'basic_lti_launch' : 'external_tool',
+      ...(reviewUrl ? { submission_data: reviewUrl } : {}),
+      submitted_at: submittedAt.toISOString(),
+      ...(manual ? { preserve_score: true } : {}),
+    },
+  };
+  if (!manual) body.scoreGiven = scoreGiven;
   const res = await fetch(internalUrl(u), {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/vnd.ims.lis.v1.score+json' },
-    body: JSON.stringify({
-      userId: sub,
-      scoreGiven,
-      scoreMaximum,
-      activityProgress: 'Completed',
-      gradingProgress: 'FullyGraded',
-      timestamp: new Date().toISOString(),
-    }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`Score passback failed (${res.status}): ${await res.text()}`);
   return true;
 }
 
 // ---------- Deep linking response ----------
+export const GRADED_PLACEMENTS = ['assignment_selection', 'submission_type_selection'];
 export async function buildDeepLinkResponse(lti, content) {
   const platform = db.prepare('SELECT * FROM platforms WHERE id = ?').get(lti.platformId);
   const type = TYPES[content.type] || {};
   const data = JSON.parse(content.data);
-  const maxScore = type.maxScore ? type.maxScore(data) : 0;
+  const grading = gradingFor(content.type, data);
   const item = {
     type: 'ltiResourceLink',
     title: content.title,
@@ -217,12 +253,16 @@ export async function buildDeepLinkResponse(lti, content) {
     custom: { content_id: content.id },
     icon: { url: iconUrl(), width: 64, height: 64 },
   };
+  const size = embedSize(content.type, data);
   if (lti.placement === 'editor_button' || !lti.placement) {
-    const size = embedSize(content.type, data);
     item.iframe = { width: size.width, height: size.height };
   }
-  if (lti.placement === 'assignment_selection' && maxScore > 0) {
-    item.lineItem = { scoreMaximum: maxScore, label: content.title, resourceId: content.id, tag: 'reach-studio' };
+  if (GRADED_PLACEMENTS.includes(lti.placement)) {
+    // Shown inside the assignment page in ReachLMS (room for the assignment bar on top).
+    item.iframe = { width: size.width, height: size.height + 140 };
+    // Every assignment gets points: auto-marked items use their own maximum, the rest are
+    // graded by the lecturer in SpeedGrader out of the points set on the Grading tab.
+    item.lineItem = { scoreMaximum: grading.max, label: content.title, resourceId: content.id, tag: 'reach-studio' };
   }
   const k = signingKey();
   const claims = {
@@ -305,6 +345,8 @@ ltiRouter.post('/lti/launch', async (req, res) => {
     let placement = payload[C.CANVAS_PLACEMENT] || null;
     try { placement = placement || new URL(target).searchParams.get('placement'); } catch { /* ignore */ }
     const custom = payload[C.CUSTOM] || {};
+    let reviewId = null;
+    try { reviewId = new URL(target).searchParams.get('review'); } catch { /* ignore */ }
     let contentId = custom.content_id || null;
     try { contentId = contentId || new URL(target).searchParams.get('content'); } catch { /* ignore */ }
 
@@ -318,6 +360,8 @@ ltiRouter.post('/lti/launch', async (req, res) => {
       roles,
       instructor: isInstructor(roles),
       context: payload[C.CTX]?.title || '',
+      contextId: payload[C.CTX]?.id || null,
+      resourceLinkId: payload[C.RL]?.id || null,
       placement,
     };
     const identity = payload.sub
@@ -336,18 +380,36 @@ ltiRouter.post('/lti/launch', async (req, res) => {
     }
 
     if (msgType === 'LtiResourceLinkRequest') {
+      // SpeedGrader (or a student's submission details) opening a submitted attempt.
+      if (reviewId) {
+        const sub = db.prepare('SELECT * FROM submissions WHERE id = ?').get(reviewId);
+        const sameCourse = sub && sub.platform_id === platform.id && (!sub.context_id || sub.context_id === lti.contextId);
+        const allowed = sameCourse && (lti.instructor || sub.sub === payload.sub);
+        if (!allowed) return res.status(403).send(views.message('Submission not available', 'You can only view submissions for your own course (lecturers) or your own work (students).'));
+        lti.kind = 'review';
+        lti.reviewId = reviewId;
+        lti.reviewContentId = sub.content_id;
+        lti.reviewSub = sub.sub;
+        lti.reviewLink = sub.resource_link_id;
+        const token = createSession(userId, lti);
+        return res.send(views.review(token));
+      }
       if (contentId) {
         const content = db.prepare('SELECT * FROM contents WHERE id = ?').get(contentId);
         if (!content) return res.status(404).send(views.message('Content not found', 'This interactive content may have been deleted by its owner.'));
         const ags = payload[C.AGS];
         lti.kind = 'player';
         lti.contentId = contentId;
-        if (ags?.lineitem && !lti.instructor && (ags.scope || []).includes('https://purl.imsglobal.org/spec/lti-ags/scope/score')) {
-          lti.ags = { lineitem: ags.lineitem };
-        }
+        const assignment = !!ags?.lineitem && (ags.scope || []).includes('https://purl.imsglobal.org/spec/lti-ags/scope/score');
+        if (assignment && !lti.instructor) lti.ags = { lineitem: ags.lineitem };
+        // A lecturer opening the assignment sees the activity plus their students' results.
+        if (assignment && lti.instructor) lti.teacherAssignment = true;
         const token = createSession(userId, lti);
         const canEdit = !!userId && userId === content.user_id;
-        return res.send(views.player(token, content, { canEdit, graded: !!lti.ags }));
+        return res.send(views.player(token, content, {
+          canEdit, graded: !!lti.ags, teacher: !!lti.teacherAssignment,
+          grading: assignment ? gradingFor(content.type, JSON.parse(content.data)) : null,
+        }));
       }
       // Course navigation (or any launch without content) opens the library.
       if (!lti.instructor) return res.send(views.message(config.toolName, 'Your teachers use ReachStudio to build interactive activities. You will find them inside your course pages, quizzes and assignments.'));

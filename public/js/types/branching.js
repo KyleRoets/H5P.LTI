@@ -95,7 +95,7 @@ export default {
           safeUrl(n?.image) && h('img', { src: safeUrl(n.image), alt: '' }),
           h('div', { class: 'body' }, h('p', { class: 'rs-status' }, 'The end'), h('h3', {}, n?.title || 'The end'), n && !isBlank(n.html) && richBlock(n.html),
             data.scoring && max > 0 && h('div', { class: 'rs-score' }, `Score: ${score} / ${max}`),
-            h('div', { class: 'rs-actions' }, h('button', { class: 'btn primary rs-accent-btn', type: 'button', onclick: () => { history = []; show(nodes[0].id); } }, icon('restore', { size: 16 }), h('span', {}, 'Start again'))))));
+            h('div', { class: 'rs-actions' }, h('button', { class: 'btn primary rs-accent-btn rs-retry', type: 'button', onclick: () => { history = []; show(nodes[0].id); } }, icon('restore', { size: 16 }), h('span', {}, 'Start again'))))));
         if (data.scoring && max > 0) ctx.report?.(score, max);
         return;
       }
