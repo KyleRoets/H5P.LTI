@@ -245,7 +245,8 @@ function renderLibrary() {
     navItem('inbox', 'Unfiled', 'none'),
     h('h3', {}, h('span', {}, 'Folders'), iconBtn('folder-plus', 'New folder', newFolder)),
     state.folders.map((fo) => navItem('folder', fo.name, fo.id, fo.count, fo)),
-    !state.folders.length && h('p', { class: 'help side-help' }, 'Create folders to organise content by course or topic.'));
+    !state.folders.length && h('p', { class: 'help side-help' }, 'Create folders to organise content by course or topic.'),
+    sideStorage());
 
   const search = h('div', { class: 'search' }, icon('search', { size: 16 }), h('input', { type: 'search', placeholder: 'Search titles…', value: f.q, 'aria-label': 'Search', oninput: debounce((e) => { f.q = e.target.value; refresh(); }, 250) }));
   const typeSel = h('select', { 'aria-label': 'Filter by type', onchange: (e) => { f.type = e.target.value; refresh(); } },
@@ -599,6 +600,11 @@ function gradingPane(t, data, onChange) {
     } catch { info.replaceChildren(); }
   }, 250);
   const changed = () => { onChange(); draw(); };
+  // Defaults first, so the controls show the real state.
+  if (g.mode === undefined && t.graded) g.mode = 'auto';
+  if (g.keep === undefined) g.keep = 'best';
+  if (g.showFeedback === undefined) g.showFeedback = true;
+  if (g.showScore === undefined) g.showScore = true;
   const draw = () => {
     const manual = !t.graded || g.mode === 'manual';
     host.replaceChildren(...[
@@ -610,9 +616,10 @@ function gradingPane(t, data, onChange) {
       manual && textField('Points', g, 'points', changed, { type: 'number', min: 1, max: 1000, placeholder: '10', help: 'The assignment is out of this many points.' }),
       selectField('Attempts allowed', g, 'attempts', [['0', 'Unlimited'], ['1', '1 attempt'], ['2', '2 attempts'], ['3', '3 attempts'], ['5', '5 attempts'], ['10', '10 attempts']], changed),
       !manual && String(g.attempts || '0') !== '1' && segmentField('Score that counts', g, 'keep', [['best', 'Best attempt'], ['latest', 'Latest attempt']], changed),
-      !manual && checkField('Let students see the correct answers ("Show answers" button)', g, 'showAnswers', changed, { help: 'Off by default for assignments, so answers can\'t be copied into a new attempt.' })].filter(Boolean));
-    if (g.mode === undefined && t.graded) g.mode = 'auto';
-    if (g.keep === undefined) g.keep = 'best';
+      !manual && h('div', { class: 'section-title' }, 'What students see'),
+      !manual && checkField('Show whether each answer is right or wrong while they work', g, 'showFeedback', changed, { help: 'Turn off to hide all marking: students answer, move on and submit, without seeing which answers were correct. Their answers are still marked, and you see everything in SpeedGrader.' }),
+      !manual && g.showFeedback !== false && checkField('Let students see the correct answers ("Show answers" button)', g, 'showAnswers', changed, { help: 'Off by default for assignments, so answers can\'t be copied into a new attempt.' }),
+      !manual && checkField('Show students their score after they submit', g, 'showScore', changed, { help: 'ReachLMS can also hold back grades: in the gradebook, set the assignment\'s grade posting policy to Manually.' })].filter(Boolean));
     refreshInfo();
   };
   draw();
@@ -641,7 +648,6 @@ async function renderAdmin() {
   let stats; let users;
   try { [stats, users] = await Promise.all([api.get('/api/admin/stats'), api.get('/api/admin/users')]); } catch (e) { toast(e.message, 'error'); return go('#'); }
   const statCard = (ic, label, value, sub) => h('div', { class: 'stat' }, h('span', { class: 'stat-ico' }, icon(ic, { size: 20 })), h('div', {}, h('div', { class: 'stat-v' }, String(value)), h('div', { class: 'stat-l' }, label), sub && h('div', { class: 'stat-s' }, sub)));
-  const maxType = Math.max(1, ...stats.byType.map((r) => r.n));
   const table = h('div', { class: 'table-wrap' });
   const search = h('div', { class: 'search' }, icon('search', { size: 16 }), h('input', { type: 'search', placeholder: 'Search name or email…', 'aria-label': 'Search users',
     oninput: debounce(async (e) => { users = await api.get(`/api/admin/users?q=${encodeURIComponent(e.target.value)}`); drawTable(); }, 250) }));
@@ -655,7 +661,7 @@ async function renderAdmin() {
         h('td', {}, h('span', { class: `pill ${u.role}` }, u.role === 'admin' ? 'Admin' : 'Teacher')),
         h('td', {}, h('span', { class: `pill ${u.status}` }, u.status === 'active' ? 'Active' : 'Suspended')),
         h('td', { class: 'num' }, String(u.contents)),
-        h('td', { class: 'num' }, fmtBytes(u.media_bytes)),
+        h('td', { class: 'num', title: storageTitle(u.storage) }, fmtBytes(u.media_bytes)),
         h('td', {}, fmtDate(u.created_at)),
         h('td', {}, u.last_seen ? timeAgo(u.last_seen) : 'Never'),
         h('td', { class: 'row-actions' }, iconBtn('eye', `View ${u.name}`, () => userDetail(u.id)), userMenu(u)))))));
@@ -711,11 +717,12 @@ async function renderAdmin() {
         h('div', {}, h('h4', {}, u.name), h('p', {}, u.email), h('p', {}, h('span', { class: `pill ${u.role}` }, u.role === 'admin' ? 'Admin' : 'Teacher'), ' ', h('span', { class: `pill ${u.status}` }, u.status === 'active' ? 'Active' : 'Suspended')))),
       h('div', { class: 'ud-stats' },
         h('div', {}, h('strong', {}, String(u.contents)), h('span', {}, 'content items')),
-        h('div', {}, h('strong', {}, fmtBytes(u.media_bytes)), h('span', {}, 'uploads')),
+        h('div', {}, h('strong', {}, fmtBytes(d.storage.total)), h('span', {}, `storage · ${d.storage.files} file${d.storage.files === 1 ? '' : 's'}`)),
         h('div', {}, h('strong', {}, fmtDate(u.created_at)), h('span', {}, 'joined')),
         h('div', {}, h('strong', {}, u.last_seen ? timeAgo(u.last_seen) : 'Never'), h('span', {}, 'last active')),
         h('div', {}, h('strong', {}, u.linked ? 'Yes' : 'No'), h('span', {}, 'linked to ReachLMS'))),
-      d.byType.length > 0 && h('div', { class: 'ud-types' }, d.byType.map((r) => typeChip(TYPES[r.type] || { name: r.type, icon: 'help', color: '#888' }).appendChild(h('b', {}, ` ${r.n}`)).parentElement)),
+      h('h5', {}, 'Storage'),
+      storageBreakdown(d.storage),
       h('h5', {}, 'Account actions'),
       h('div', { class: 'ud-actions' }, ...userActions(u, () => body.closest('.modal-back')?.querySelector('.modal-head button')?.click())));
     await modal({ title: 'User details', body, confirm: null, cancel: 'Close' });
@@ -740,20 +747,46 @@ async function renderAdmin() {
         statCard('users', 'Accounts', stats.users, `${stats.newLast30} new in the last 30 days`),
         statCard('activity', 'Active (30 days)', stats.activeLast30, `${stats.suspendedUsers} suspended`),
         statCard('library', 'Content items', stats.contents),
-        statCard('database', 'Storage used', fmtBytes(stats.mediaBytes)),
+        statCard('database', 'Storage used', fmtBytes(stats.storage.total), stats.storage.disk ? `${fmtBytes(stats.storage.disk.free)} free on the server` : `${stats.storage.files} files`),
         statCard('award', 'Grades sent', stats.gradesSent, `${stats.attempts} attempt${stats.attempts === 1 ? '' : 's'} recorded`)),
       h('div', { class: 'admin-grid' },
         h('div', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Users'), search), table),
-        h('div', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Content by type')),
-          stats.byType.length ? h('div', { class: 'bars' }, stats.byType.map((r) => {
-            const t = TYPES[r.type] || { name: r.type, icon: 'help', color: '#888' };
-            return h('div', { class: 'bar-row' }, h('span', { class: 'bar-l' }, icon(t.icon, { size: 14 }), t.name), h('span', { class: 'bar' }, h('span', { style: { width: `${(r.n / maxType) * 100}%`, background: t.color } })), h('span', { class: 'bar-n' }, String(r.n)));
-          })) : h('p', { class: 'help', style: { padding: '0 16px 16px' } }, 'No content yet.'),
+        h('div', { class: 'panel' }, h('div', { class: 'panel-head' }, h('h3', {}, 'Storage')),
+          h('div', { class: 'storage-panel' },
+            storageBreakdown(stats.storage),
+            stats.storage.orphans > 0 && h('p', { class: 'help' }, `Includes ${fmtBytes(stats.storage.orphans)} of files not linked to any account (for example interrupted uploads).`),
+            h('p', { class: 'help' }, stats.storage.quota ? `Each account can use up to ${fmtBytes(stats.storage.quota)} (STORAGE_QUOTA_MB).` : 'No per-account limit is set. Set STORAGE_QUOTA_MB on the server to add one.'),
+            h('p', { class: 'help' }, 'Measured from the files on the ReachStudio server. Uploaded media is stored there, not in ReachLMS. YouTube and Vimeo videos use no storage.')),
           h('div', { class: 'panel-head' }, h('h3', {}, 'Connected ReachLMS sites')),
           h('ul', { class: 'sites' }, stats.platforms.length ? stats.platforms.map((p) => h('li', {}, icon('link', { size: 14 }), h('span', {}, h('strong', {}, p.name), h('small', {}, p.issuer)))) : h('li', { class: 'help' }, 'None yet — install ReachStudio in ReachLMS with Dynamic Registration.'))))));
     drawTable();
   };
   renderAdminBody();
+}
+
+// ---------------- storage display ----------------
+/** "Storage used" meter at the bottom of the library sidebar (the teacher's own uploads). */
+function sideStorage() {
+  const el = h('div', { class: 'side-storage' });
+  api.get('/api/storage').then((s) => {
+    const pct = s.quota ? Math.min(100, (s.total / s.quota) * 100) : 0;
+    el.replaceChildren(...[
+      h('div', { class: 'side-storage-l' }, icon('database', { size: 14 }), h('span', {}, 'Storage used'), h('b', {}, s.quota ? `${fmtBytes(s.total)} of ${fmtBytes(s.quota)}` : fmtBytes(s.total))),
+      s.quota > 0 && h('div', { class: `storage-bar ${pct > 90 ? 'full' : ''}` }, h('span', { style: { width: `${pct}%`, background: pct > 90 ? 'var(--red)' : 'var(--sky)' } })),
+      h('p', { class: 'help' }, `Video ${fmtBytes(s.video)} · images ${fmtBytes(s.images)} · audio ${fmtBytes(s.audio)}. YouTube and Vimeo links use no storage.`)].filter(Boolean));
+  }).catch(() => el.remove());
+  return el;
+}
+const KINDS = [['images', 'Images', 'image', '#278DDF'], ['video', 'Video', 'type-video', '#6C4EE0'], ['audio', 'Audio', 'type-dictation', '#1F9D6A'], ['other', 'Captions & other', 'list', '#8a94a6']];
+const storageTitle = (s) => (s ? KINDS.map(([k, label]) => `${label}: ${fmtBytes(s[k] || 0)}`).join('\n') : '');
+function storageBreakdown(s) {
+  const total = s.total || 0;
+  const quota = s.quota || 0;
+  const scale = Math.max(quota, total, 1);
+  return h('div', { class: 'storage' },
+    h('div', { class: 'storage-total' }, h('strong', {}, fmtBytes(total)), quota ? h('span', {}, ` of ${fmtBytes(quota)}`) : '', h('span', { class: 'muted' }, ` · ${s.files || 0} file${s.files === 1 ? '' : 's'}`)),
+    h('div', { class: 'storage-bar', role: 'img', 'aria-label': storageTitle(s) }, KINDS.map(([k, , , c]) => (s[k] ? h('span', { style: { width: `${(s[k] / scale) * 100}%`, background: c } }) : null))),
+    h('ul', { class: 'storage-kinds' }, KINDS.map(([k, label, ic, c]) => h('li', {}, h('span', { class: 'sw', style: { background: c } }), icon(ic, { size: 14 }), h('span', {}, label), h('b', {}, fmtBytes(s[k] || 0))))));
 }
 
 // ---------------- helpers ----------------

@@ -40,8 +40,12 @@ export const config = {
   adminEmails: (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
   // How long a studio/player session token stays valid.
   sessionHours: Number(process.env.SESSION_HOURS || 8),
-  // Max upload size for images/video in MB.
+  // Max upload size in MB for images, audio and captions.
   maxUploadMb: Number(process.env.MAX_UPLOAD_MB || 50),
+  // Max upload size in MB for video files (MP4/WebM).
+  maxVideoMb: Number(process.env.MAX_VIDEO_MB || 500),
+  // Optional storage limit per account in MB (0 = no limit). Counts every uploaded file.
+  storageQuotaMb: Number(process.env.STORAGE_QUOTA_MB || 0),
   // Optional: protects the Dynamic Registration page with a shared code.
   registrationCode: process.env.REGISTRATION_CODE || '',
   // Set to "true" when running behind a reverse proxy that terminates TLS.

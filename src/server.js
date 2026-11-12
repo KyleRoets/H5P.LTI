@@ -51,7 +51,7 @@ export async function createApp() {
   app.use((err, req, res, next) => {
     console.error(err);
     if (res.headersSent) return next(err);
-    res.status(err.status || 500).json({ error: err.code === 'LIMIT_FILE_SIZE' ? `File is larger than ${config.maxUploadMb} MB.` : 'Something went wrong.' });
+    res.status(err.status || 500).json({ error: err.code === 'LIMIT_FILE_SIZE' ? `File is larger than ${Math.max(config.maxUploadMb, config.maxVideoMb)} MB.` : 'Something went wrong.' });
   });
   setInterval(cleanupExpired, 10 * 60 * 1000).unref();
   return app;

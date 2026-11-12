@@ -100,6 +100,7 @@ const P = {
   'type-beforeafter': '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 2v20"/><path d="m9 10-2 2 2 2M15 10l2 2-2 2"/>',
   'type-collage': '<rect x="3" y="3" width="10" height="18" rx="1.5"/><rect x="15" y="3" width="6" height="8" rx="1.5"/><rect x="15" y="13" width="6" height="8" rx="1.5"/>',
   'type-chart': '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/>',
+  'type-videoplayer': '<circle cx="12" cy="12" r="10"/><path d="m10 8 6 4-6 4Z"/>',
   'type-guess': '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2.5-3 4M12 17h.01"/>',
 };
 

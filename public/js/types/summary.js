@@ -70,6 +70,7 @@ export default {
       root.append(h('p', { class: 'rs-status' }, `Set ${idx + 1} of ${sets.length} — pick the correct statement`),
         h('div', { class: 'rs-options' }, opts.map((o) => {
           const b = h('button', { type: 'button', class: 'rs-option', onclick: () => {
+            if (firstTry) ctx.record?.({ key: `set${idx}`, question: `Set ${idx + 1}: pick the correct statement`, answer: o.t, correct: s.correct, ok: o.ok });
             if (o.ok) {
               if (firstTry) score++;
               b.classList.add('correct');

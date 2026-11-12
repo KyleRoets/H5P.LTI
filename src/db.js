@@ -137,6 +137,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS submissions (
   created_at TEXT DEFAULT (datetime('now'))
 )`);
 db.exec('CREATE INDEX IF NOT EXISTS submissions_link ON submissions (platform_id, resource_link_id, sub)');
+// Question-by-question answers (JSON), for activities that show one question at a time.
+if (!db.prepare('PRAGMA table_info(submissions)').all().some((c) => c.name === 'responses')) db.exec('ALTER TABLE submissions ADD COLUMN responses TEXT');
 
 export const newId = (bytes = 12) => crypto.randomBytes(bytes).toString('base64url');
 

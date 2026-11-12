@@ -101,28 +101,39 @@ export default {
     const toc = h('ol', { class: 'rs-book-toc' });
     const progress = h('div', { class: 'rs-progress' }, h('div'));
     let idx = data.cover ? -1 : 0;
+    // Each chapter is built once and kept (hidden when not shown), so answers survive moving
+    // between chapters and a submitted snapshot contains every chapter the student worked on.
+    const pages = new Map();
+    const buildPage = (i) => {
+      if (i === -1) {
+        return h('div', { class: 'rs-book-cover' }, safeUrl(data.coverImage) && h('img', { src: safeUrl(data.coverImage), alt: '' }),
+          h('h2', {}, data.coverTitle || 'Interactive book'), !isBlank(data.coverText) && richBlock(data.coverText),
+          h('button', { class: 'btn primary rs-accent-btn', type: 'button', onclick: () => go(0) }, h('span', {}, 'Start reading'), icon('chevron-right', { size: 16 })));
+      }
+      const ch = chapters[i];
+      const el = h('section', { class: 'rs-book-chapter' }, h('h2', { class: 'rs-book-h' }, ch.title || `Chapter ${i + 1}`));
+      ch.blocks.forEach((b, j) => {
+        if (b.kind === 'text') { if (!isBlank(b.html)) el.append(richBlock(b.html)); return; }
+        const t = TYPES[b.type]; if (!t) return;
+        const key = `${i}:${j}`;
+        const sub = {
+          ...ctx,
+          report: (s, m) => { scores.set(key, { s, m }); report(); },
+          record: (r) => ctx.record?.({ ...r, key: `c${key}:${r.key}`, question: `${ch.title || `Chapter ${i + 1}`} — ${r.question}` }),
+        };
+        try { el.append(h('div', { class: 'rs-book-activity' }, t.render(clone(b.data), sub))); } catch (e) { console.error(e); }
+      });
+      el.append(h('div', { class: 'rs-book-nav' },
+        h('button', { class: 'btn sm', type: 'button', disabled: i === 0 && !data.cover, onclick: () => go(i - 1) }, icon('chevron-left', { size: 16 }), h('span', {}, 'Back')),
+        h('span', { class: 'rs-status' }, `Chapter ${i + 1} of ${chapters.length}`),
+        i < chapters.length - 1 ? h('button', { class: 'btn sm primary rs-accent-btn', type: 'button', onclick: () => go(i + 1) }, h('span', {}, 'Next'), icon('chevron-right', { size: 16 })) : h('span', { class: 'rs-book-done' }, icon('check', { size: 15 }), 'End of book')));
+      return el;
+    };
     const go = (i) => {
       idx = Math.max(data.cover ? -1 : 0, Math.min(chapters.length - 1, i));
-      pageEl.replaceChildren();
-      if (idx === -1) {
-        pageEl.append(h('div', { class: 'rs-book-cover' }, safeUrl(data.coverImage) && h('img', { src: safeUrl(data.coverImage), alt: '' }),
-          h('h2', {}, data.coverTitle || 'Interactive book'), !isBlank(data.coverText) && richBlock(data.coverText),
-          h('button', { class: 'btn primary rs-accent-btn', type: 'button', onclick: () => go(0) }, h('span', {}, 'Start reading'), icon('chevron-right', { size: 16 }))));
-      } else {
-        visited.add(idx);
-        const ch = chapters[idx];
-        pageEl.append(h('h2', { class: 'rs-book-h' }, ch.title || `Chapter ${idx + 1}`));
-        ch.blocks.forEach((b, j) => {
-          if (b.kind === 'text') { if (!isBlank(b.html)) pageEl.append(richBlock(b.html)); return; }
-          const t = TYPES[b.type]; if (!t) return;
-          const key = `${idx}:${j}`;
-          try { pageEl.append(h('div', { class: 'rs-book-activity' }, t.render(clone(b.data), { ...ctx, report: (s, m) => { scores.set(key, { s, m }); report(); } }))); } catch (e) { console.error(e); }
-        });
-        pageEl.append(h('div', { class: 'rs-book-nav' },
-          h('button', { class: 'btn sm', type: 'button', disabled: idx === 0 && !data.cover, onclick: () => go(idx - 1) }, icon('chevron-left', { size: 16 }), h('span', {}, 'Back')),
-          h('span', { class: 'rs-status' }, `Chapter ${idx + 1} of ${chapters.length}`),
-          idx < chapters.length - 1 ? h('button', { class: 'btn sm primary rs-accent-btn', type: 'button', onclick: () => go(idx + 1) }, h('span', {}, 'Next'), icon('chevron-right', { size: 16 })) : h('span', { class: 'rs-book-done' }, icon('check', { size: 15 }), 'End of book')));
-      }
+      if (!pages.has(idx)) { pages.set(idx, buildPage(idx)); [...pages.entries()].sort((a, b) => a[0] - b[0]).forEach(([, p]) => pageEl.append(p)); }
+      pages.forEach((p, k) => p.classList.toggle('rs-book-hidden', k !== idx));
+      if (idx >= 0) visited.add(idx);
       toc.replaceChildren(...chapters.map((c, i) => h('li', { class: `${i === idx ? 'on' : ''} ${visited.has(i) ? 'seen' : ''}` }, h('button', { type: 'button', onclick: () => go(i) }, h('span', { class: 'dot' }, visited.has(i) ? icon('check', { size: 11, stroke: 3 }) : String(i + 1)), h('span', {}, c.title || `Chapter ${i + 1}`)))));
       progress.firstChild.style.width = `${(visited.size / chapters.length) * 100}%`;
     };

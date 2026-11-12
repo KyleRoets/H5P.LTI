@@ -39,6 +39,7 @@ export const TYPES = {
   collage:      { embedSize: { width: 800, height: 520 }, maxScore: () => 0 },
   chart:        { embedSize: { width: 800, height: 520 }, maxScore: () => 0 },
   guess:        { embedSize: { width: 720, height: 520 }, maxScore: () => 0 },
+  videoplayer:  { embedSize: { width: 800, height: 540 }, maxScore: () => 0 },
 };
 
 /** Embed iframe size: the author's chosen width, height scaled from the type default. */
@@ -66,6 +67,10 @@ export function gradingFor(type, data = {}) {
     attempts: Math.max(0, Math.min(20, Math.round(Number(g.attempts) || 0))),
     keep: g.keep === 'latest' ? 'latest' : 'best',
     showAnswers: !!g.showAnswers,
+    // While working, show right/wrong marking (off = students just answer and submit).
+    showFeedback: g.showFeedback !== false,
+    // After submitting, show the student their score.
+    showScore: g.showScore !== false,
   };
 }
 

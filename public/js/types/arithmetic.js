@@ -75,6 +75,7 @@ export default {
         input.readOnly = true;
         const ok = Number(input.value) === q.answer;
         if (ok) score++;
+        ctx.record?.({ key: `a${idx}`, question: `${q.a} ${OPS[q.op]} ${q.b}`, answer: input.value, correct: String(q.answer), ok });
         fb.replaceChildren(h('span', { class: ok ? 'ok' : 'no' }, icon(ok ? 'check' : 'x', { size: 16, stroke: 3 }), ok ? ' Correct' : ` ${q.answer}`));
         input.classList.add(ok ? 'correct' : 'wrong');
         setTimeout(() => { idx++; ask(); }, ok ? 450 : 1100);

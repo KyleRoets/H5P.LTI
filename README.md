@@ -17,7 +17,7 @@ Students see the content embedded inline. Scored content can also be added as a 
 
 ## Content types
 
-29 interactive types covering what H5P and Lumi offer, written as original code with no H5P dependency. The "Create new" gallery groups them into four sections and has a search box. Library cards show a live miniature of each item. Images, audio and video are uploaded (no links to files elsewhere). "Graded" types send a score to the ReachLMS gradebook when added as an assignment.
+30 interactive types covering what H5P and Lumi offer, written as original code with no H5P dependency. The "Create new" gallery groups them into four sections and has a search box. Library cards show a live miniature of each item. Images and audio are uploaded; video can be uploaded or linked from YouTube or Vimeo. "Graded" types send a score to the ReachLMS gradebook when added as an assignment.
 
 **Questions & quizzes**
 
@@ -43,7 +43,7 @@ Students see the content embedded inline. Scored content can also be added as a 
 | Presentation | Slides (5 layouts, colours, images) with built-in questions; full-screen and keyboard navigation | ✓ |
 | Interactive Book | Chapters of text, images and any other activity, with progress and a total score | ✓ |
 | Branching Scenario | Choose a path through scenes to one of several endings, optionally scored | ✓ |
-| Interactive Video | An uploaded MP4/WebM pauses at set times for questions or info | ✓ |
+| Interactive Video | An uploaded MP4/WebM, or a YouTube or Vimeo video, pauses at set times for questions or info | ✓ |
 | Timeline | Scroll through dated events with images | – |
 | Accordion | Expandable sections (FAQs, glossaries) | – |
 
@@ -51,6 +51,7 @@ Students see the content embedded inline. Scored content can also be added as a 
 
 | Type | What learners do | Graded |
 |---|---|---|
+| Video | Watch an uploaded video (with captions and a cover image), or a YouTube or Vimeo video — video hosting for ReachLMS | – |
 | Image Hotspots | Click markers on an image to reveal text and pictures (8 marker icons, sizes, shapes and colours) | – |
 | Image Slider | Step through a captioned image carousel | – |
 | Before and After | Drag a handle to compare two images | – |
@@ -79,7 +80,7 @@ Every type has a full description (what it is, what it's good for, what learners
 
 **Roles:**
 - **Teacher (default):** their own library and builder.
-- **Admin:** an **Admin** tab with usage statistics, content by type and the connected ReachLMS sites, plus user management: see a user's usage, suspend or reactivate, make admin, create a password reset link, or delete the account and its content.
+- **Admin:** an **Admin** tab with usage statistics, exact storage per account (images, video, audio, captions — measured on disk) and the connected ReachLMS sites, plus user management: see a user's storage and activity, suspend or reactivate, make admin, create a password reset link, or delete the account and its content.
 - **Passwords and recovery:**
   - The account menu (click your avatar) has **Change password**. When ReachLMS has just confirmed who you are, you don't need your current password; otherwise you do.
   - **Forgot your password?** If you've opened ReachStudio from ReachLMS before, opening it from ReachLMS again lets you choose a new password. This works because signing out keeps the ReachLMS link but stops automatic sign-in.
@@ -111,7 +112,15 @@ When ReachStudio content is an assignment's submission type, ReachStudio replace
   - The attempt is sent with `activityProgress: Submitted` and `gradingProgress: PendingManual` and no score, so SpeedGrader shows it as **Needs grading**.
   - Resubmitting keeps a grade the lecturer already gave (`preserve_score`).
   - Items with no right answers (hotspots, flashcards…) are always lecturer-graded.
-- **Grading tab** in the builder: automatic or by the lecturer, points (for lecturer grading), attempts allowed (1–10 or unlimited), best or latest score, and whether students may use "Show answers". The attempt limit is enforced by the server.
+- **Grading tab** in the builder: automatic or by the lecturer, points (for lecturer grading), attempts allowed (1–10 or unlimited), best or latest score. The attempt limit is enforced by the server.
+- **What students see** (auto-marked items):
+  - **Show whether each answer is right or wrong:** turn it off and students just answer, move on and submit. There are no ticks, crosses, correct answers or scores; Check buttons become *Save answer*. Answers are still marked, and the lecturer sees everything.
+  - **Show answers button:** off by default.
+  - **Show the score after submitting:** when off, the score is also left out of what the server sends the student. To hold the grade back in the gradebook too, set the assignment's grade posting policy to *Manually*.
+- **What the lecturer sees in SpeedGrader:**
+  - An **Answers** table: each question, the student's answer, the correct answer and right or wrong.
+  - Recorded for quizzes, slide questions, video questions, summaries, arithmetic, branching paths and activities inside interactive books.
+  - Below it, the activity exactly as it was submitted. Book chapters are all included.
 - **During an assignment:** the activities' own "Try again" and "Show answers" buttons are hidden. A new attempt starts fresh from the assignment bar, while attempts remain.
 - **Lecturer view:** a lecturer opening the assignment sees a lecturer view, with **Student submissions** listing every student's attempts and their work.
 - **Security of snapshots:**
@@ -205,6 +214,41 @@ Then open <http://localhost:4000>:
 2. Use the RCE's **ReachStudio** button to create an account, build something and **Save & insert**.
 3. Add a graded assignment, then switch to **Student** to complete it and watch the gradebook update.
 
+## Media storage: where files live
+
+Uploaded images, audio, captions and videos are stored on the **ReachStudio server**, in `DATA_DIR/media`. On Render that is the persistent disk mounted at `/data`.
+
+**ReachLMS storage is not used.**
+- ReachLMS only stores the LTI link to an item: a few hundred bytes.
+- Course and user file quotas in ReachLMS are not touched.
+- Students stream the file from ReachStudio, inside the ReachLMS page.
+
+**YouTube and Vimeo videos use no storage at all.** The Video and Interactive Video types embed them from YouTube or Vimeo:
+- YouTube is embedded with its privacy-enhanced player.
+- Vimeo can be public or unlisted. Unlisted links are kept with their privacy code.
+
+**How storage is measured:**
+- **Exact sizes:** the Admin tab shows every account's storage from the actual files on disk, split into images, video, audio and captions/other. It also shows the server total and the free space left.
+- **Teachers' view:** each teacher sees their own usage at the bottom of the library sidebar.
+- **Deleting an account** deletes its files.
+- **Deleting a content item** keeps its files, because they may be used in other items. Those files still count until the account is removed.
+
+**Limits:**
+
+| Setting | Default | What it does |
+|---|---|---|
+| `MAX_UPLOAD_MB` | 50 | Largest image, audio or captions file |
+| `MAX_VIDEO_MB` | 500 | Largest video file |
+| `STORAGE_QUOTA_MB` | 0 (no limit) | Per-account limit. Uploads that would go over it are refused, with a suggestion to use YouTube or Vimeo |
+
+**Planning for video.** Video fills a disk quickly. A 10-minute 1080p lecture is very roughly 100–300 MB, and a 720p export about half that. Options, from simplest:
+1. **Keep long videos on YouTube (unlisted) or Vimeo** and link them. Free or cheap hosting, adaptive streaming for slow connections, and no ReachStudio storage.
+2. **Upload short clips** (under a few minutes, exported as 720p MP4 H.264), and set `STORAGE_QUOTA_MB` so one account can't fill the disk.
+3. **Grow the disk.** On Render, raise `sizeGB` on the disk: it can grow but not shrink. Back up `/data`.
+4. **Object storage** for large-scale video, for example Cloudflare R2, DigitalOcean Spaces or Amazon S3, ideally behind a CDN. This is not built in yet. ReachStudio would upload to the bucket instead of the local disk, with the same storage accounting.
+
+Uploaded videos are served as normal MP4 files with range requests, so learners can seek without downloading the whole file. They are not converted into multiple qualities the way YouTube or Vimeo does.
+
 ## Tests
 
 ```bash
@@ -253,6 +297,6 @@ test/e2e-lti.test.js       End-to-end test
 - **Grading model:** scores are calculated in the learner's browser and capped at the activity's maximum on the server. That's fine for formative activities. For high-stakes assessment, use ReachLMS's native quizzes, or add server-side answer checking.
 - **What is graded where:** content inserted with the RCE button is display-only (Canvas doesn't link RCE embeds to the gradebook). Use *Assignment → External Tool → ReachStudio* for graded activities.
 - **Quizzes:** the RCE button works where ReachLMS's editor shows LTI editor tools (pages, assignments, discussions, Classic Quiz questions). Support inside New Quizzes depends on your ReachLMS version, so check there first.
-- **Interactive Video:** videos are uploaded (MP4/WebM, up to `MAX_UPLOAD_MB`, default 50 MB). Older items that used a YouTube link keep playing.
+- **Video and Interactive Video:** uploads (MP4/WebM, up to `MAX_VIDEO_MB`, default 500 MB) or YouTube/Vimeo links. Linked videos need the learner's network to allow youtube.com or vimeo.com.
 - **Editing after embedding:** embeds reference content by ID, so editing an item updates it everywhere it is embedded. When the owner views an embed in ReachLMS, they see an **✎ Edit in ReachStudio** button.
 - **Scaling:** for multiple server instances, move SQLite and `media/` to shared storage (e.g. Postgres and S3). The in-memory sign-in throttle and token cache are per instance.

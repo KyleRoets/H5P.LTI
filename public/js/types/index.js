@@ -27,6 +27,7 @@ import beforeafter from './beforeafter.js';
 import collage from './collage.js';
 import chart from './chart.js';
 import guess from './guess.js';
+import videoplayer from './videoplayer.js';
 import { h, applyStyle } from '../util.js';
 import { TYPE_COLORS } from '../covers.js';
 
@@ -47,7 +48,7 @@ export const TYPE_LIST = [
   // Lessons & stories
   presentation, book, branching, video, timeline, accordion,
   // Images & media
-  hotspots, slider, beforeafter, collage, chart, guess,
+  videoplayer, hotspots, slider, beforeafter, collage, chart, guess,
   // Games & practice
   memory, crossword, wordsearch, cards, personality,
 ];

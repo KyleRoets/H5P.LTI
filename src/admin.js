@@ -7,6 +7,7 @@ import { config } from './config.js';
 import crypto from 'node:crypto';
 import { requireAdmin, revokeUserSessions } from './sessions.js';
 import { hashToken } from './api.js';
+import { usage, userUsage, resetUsageCache, quotaBytes } from './storage.js';
 
 export const adminRouter = express.Router();
 adminRouter.use('/api/admin', express.json(), requireAdmin);
@@ -21,10 +22,11 @@ adminRouter.get('/api/admin/stats', (req, res) => {
     activeLast30: one("SELECT COUNT(*) n FROM users WHERE last_seen >= datetime('now', '-30 days')").n,
     newLast30: one("SELECT COUNT(*) n FROM users WHERE created_at >= datetime('now', '-30 days')").n,
     contents: one('SELECT COUNT(*) n FROM contents').n,
-    mediaBytes: one('SELECT COALESCE(SUM(size), 0) n FROM media').n,
+    // Measured on disk: every uploaded file, plus anything else in the media folder.
+    storage: (() => { const u = usage(); return { ...u.all, total: u.all.total + u.orphans, orphans: u.orphans, disk: u.disk, quota: quotaBytes() }; })(),
+    mediaBytes: usage().all.total + usage().orphans,
     attempts: one('SELECT COUNT(*) n FROM attempts').n,
     gradesSent: one("SELECT COUNT(*) n FROM attempts WHERE passback = 'sent'").n,
-    byType: db.prepare('SELECT type, COUNT(*) n FROM contents GROUP BY type ORDER BY n DESC').all(),
     platforms: db.prepare('SELECT name, issuer, created_at FROM platforms ORDER BY id').all(),
   });
 });
@@ -32,7 +34,6 @@ adminRouter.get('/api/admin/stats', (req, res) => {
 const USER_SQL = `
   SELECT u.id, u.name, u.email, u.role, u.status, u.created_at, u.last_seen,
     (SELECT COUNT(*) FROM contents c WHERE c.user_id = u.id) AS contents,
-    (SELECT COALESCE(SUM(size), 0) FROM media m WHERE m.user_id = u.id) AS media_bytes,
     (SELECT MAX(updated_at) FROM contents c WHERE c.user_id = u.id) AS last_edit,
     (SELECT COUNT(*) FROM lti_identities i WHERE i.user_id = u.id AND i.active = 1) AS linked
   FROM users u`;
@@ -42,14 +43,14 @@ adminRouter.get('/api/admin/users', (req, res) => {
   const rows = q
     ? db.prepare(`${USER_SQL} WHERE u.name LIKE ? OR u.email LIKE ? ORDER BY u.created_at DESC`).all(`%${q}%`, `%${q}%`)
     : db.prepare(`${USER_SQL} ORDER BY u.created_at DESC`).all();
-  res.json(rows);
+  res.json(rows.map((r) => { const s = userUsage(r.id); return { ...r, media_bytes: s.total, storage: s }; }));
 });
 
 adminRouter.get('/api/admin/users/:id', (req, res) => {
   const user = db.prepare(`${USER_SQL} WHERE u.id = ?`).get(req.params.id);
   if (!user) return res.status(404).json({ error: 'User not found.' });
-  const byType = db.prepare('SELECT type, COUNT(*) n FROM contents WHERE user_id = ? GROUP BY type ORDER BY n DESC').all(req.params.id);
-  res.json({ user, byType });
+  const storage = userUsage(user.id);
+  res.json({ user: { ...user, media_bytes: storage.total }, storage: { ...storage, quota: quotaBytes() } });
 });
 
 adminRouter.patch('/api/admin/users/:id', (req, res) => {
@@ -90,6 +91,7 @@ adminRouter.delete('/api/admin/users/:id', (req, res) => {
   const files = db.prepare('SELECT id FROM media WHERE user_id = ?').all(target.id);
   revokeUserSessions(target.id);
   db.prepare('DELETE FROM users WHERE id = ?').run(target.id); // cascades to content, folders, media rows, identities
-  for (const f of files) fs.rm(path.join(config.dataDir, 'media', path.basename(f.id)), { force: true }, () => {});
+  for (const f of files) fs.rmSync(path.join(config.dataDir, 'media', path.basename(f.id)), { force: true });
+  resetUsageCache();
   res.json({ ok: true, deletedFiles: files.length });
 });

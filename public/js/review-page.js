@@ -3,7 +3,7 @@
 import { h, makeApi } from './util.js';
 import { icon } from './icons.js';
 import { TYPES } from './types/index.js';
-import { snapshotFrame, fmtWhen } from './submission.js';
+import { snapshotFrame, fmtWhen, responsesTable } from './submission.js';
 
 const BOOT = window.BOOT;
 const api = makeApi(() => BOOT.token);
@@ -28,7 +28,8 @@ async function show(id) {
       switcher),
     grade,
     s.passback === 'failed' && h('p', { class: 'warn' }, icon('alert', { size: 16 }), h('span', {}, 'This attempt was saved in ReachStudio, but sending it to ReachLMS failed.')),
-    h('div', { class: 'review-work' }, snapshotFrame(s.snapshot, BOOT.build))].filter(Boolean));
+    responsesTable(s.responses),
+    h('div', { class: 'review-work' }, h('h4', { class: 'review-sub' }, 'The activity as submitted'), snapshotFrame(s.snapshot, BOOT.build))].filter(Boolean));
 }
 
 // The session knows which submission was launched; start there.

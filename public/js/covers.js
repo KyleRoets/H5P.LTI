@@ -6,7 +6,7 @@ export const TYPE_COLORS = {
   findhotspot: '#C2410C', order: '#0F766E', matching: '#7C3AED', summary: '#2563EB', essay: '#475569', dictation: '#BE185D',
   arithmetic: '#15803D', memory: '#9333EA', crossword: '#1E40AF', wordsearch: '#B45309', personality: '#DB2777',
   branching: '#0891B2', book: '#1D4ED8', timeline: '#A16207', slider: '#0369A1', beforeafter: '#4D7C0F', collage: '#C026D3',
-  chart: '#0D9488', guess: '#EA580C',
+  chart: '#0D9488', guess: '#EA580C', videoplayer: '#DC2626',
 };
 
 const W = '#ffffff';
@@ -208,6 +208,13 @@ const DRAW = {
     ${line(60, 126, 90, '#2b3a55')}<rect x="60" y="138" width="70" height="12" rx="6" fill="${c}"/>
     <g filter="${sh}"><rect x="194" y="58" width="90" height="64" rx="10" fill="${W}"/></g>
     <path d="M206 76c8-12 26-12 34 0-8 12-26 12-34 0Z" fill="none" stroke="${c}" stroke-width="2.5"/><circle cx="223" cy="76" r="4" fill="${c}"/>${line(206, 98, 66)}${line(206, 108, 48)}`,
+  videoplayer: (c, sh) => `
+    <g filter="${sh}"><rect x="46" y="20" width="228" height="140" rx="12" fill="#1d2433"/></g>
+    <rect x="46" y="20" width="228" height="140" rx="12" fill="${c}" opacity=".18"/>
+    <circle cx="160" cy="82" r="26" fill="${W}" opacity=".95"/><path d="m152 70 22 12-22 12Z" fill="${c}"/>
+    <rect x="62" y="136" width="196" height="5" rx="2.5" fill="${W}" opacity=".35"/><rect x="62" y="136" width="84" height="5" rx="2.5" fill="${c}"/>
+    <circle cx="146" cy="138.5" r="6" fill="${W}"/>
+    <g filter="${sh}"><rect x="214" y="30" width="48" height="22" rx="6" fill="${W}"/></g><text x="238" y="45" font-family="Arial, sans-serif" font-size="11" font-weight="800" fill="${c}" text-anchor="middle">HD</text>`,
 };
 
 /** SVG markup for a type's cover. Static strings only (no user input). */

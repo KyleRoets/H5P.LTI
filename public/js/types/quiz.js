@@ -1,4 +1,4 @@
-import { h, textField, selectField, checkField, mediaField, listEditor, optionsEditor, choiceQuestion, feedback, richField, richBlock, isBlank, shuffle, emptyState , htmlToText } from '../util.js';
+import { h, textField, selectField, checkField, mediaField, listEditor, optionsEditor, choiceQuestion, feedback, richField, richBlock, isBlank, shuffle, emptyState, htmlToText, checkLabel } from '../util.js';
 import { icon } from '../icons.js';
 
 const newQ = (kind = 'choice') => (kind === 'truefalse'
@@ -86,9 +86,10 @@ export default {
       const check = h('button', { class: 'btn primary rs-accent-btn', type: 'button', onclick: () => {
         const ok = cq.check(); if (ok === null) return;
         results[idx] = ok; check.remove(); next.classList.remove('hidden');
+        ctx.record?.({ key: `q${base.indexOf(q)}`, question: htmlToText(q.text) || `Question ${idx + 1}`, ...cq.describe() });
         fb.append(feedback(ok, isBlank(q.feedbackCorrect) ? 'Correct!' : q.feedbackCorrect, isBlank(q.feedbackWrong) ? 'Not quite — the correct answer is highlighted.' : q.feedbackWrong));
         next.focus();
-      } }, icon('check', { size: 16 }), h('span', {}, 'Check'));
+      } }, icon('check', { size: 16 }), h('span', {}, checkLabel()));
       root.append(bar,
         idx === 0 && !isBlank(data.intro) && richBlock(data.intro, 'rs-instructions'),
         h('p', { class: 'rs-status' }, `Question ${idx + 1} of ${order.length}`),

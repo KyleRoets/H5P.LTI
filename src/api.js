@@ -1,6 +1,7 @@
 // JSON API used by the studio (library + builder) and the player.
 import express from 'express';
 import path from 'node:path';
+import fs from 'node:fs';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import crypto from 'node:crypto';
@@ -9,6 +10,7 @@ import { config } from './config.js';
 import { createSession, getSession, setSessionUser, deleteSession, tokenFrom, requireSession, requireUser } from './sessions.js';
 import { buildDeepLinkResponse, postScore } from './lti.js';
 import { TYPES, isType, gradingFor } from './types.js';
+import { userUsage, quotaBytes, resetUsageCache } from './storage.js';
 import { views } from './views.js';
 
 export const apiRouter = express.Router();
@@ -287,22 +289,35 @@ apiRouter.delete('/api/contents/:id', requireUser, (req, res) => {
 // ---------- media uploads ----------
 const ALLOWED = {
   'image/png': '.png', 'image/jpeg': '.jpg', 'image/gif': '.gif', 'image/webp': '.webp',
-  'video/mp4': '.mp4', 'video/webm': '.webm', 'audio/mpeg': '.mp3',
+  'video/mp4': '.mp4', 'video/webm': '.webm', 'audio/mpeg': '.mp3', 'text/vtt': '.vtt',
 };
 const upload = multer({
   storage: multer.diskStorage({
     destination: path.join(config.dataDir, 'media'),
     filename: (req, file, cb) => cb(null, newId(18) + ALLOWED[file.mimetype]),
   }),
-  limits: { fileSize: config.maxUploadMb * 1024 * 1024 },
+  limits: { fileSize: Math.max(config.maxUploadMb, config.maxVideoMb) * 1024 * 1024 },
   fileFilter: (req, file, cb) => cb(null, !!ALLOWED[file.mimetype]),
 });
 
 apiRouter.post('/api/uploads', requireUser, upload.single('file'), (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Upload a PNG, JPG, GIF, WebP image, MP4/WebM video or MP3 audio file.' });
+  if (!req.file) return res.status(400).json({ error: 'Upload a PNG, JPG, GIF, WebP image, MP4/WebM video, MP3 audio or VTT captions file.' });
+  const reject = (status, error) => { fs.rm(req.file.path, { force: true }, () => {}); res.status(status).json({ error }); };
+  const isVideo = req.file.mimetype.startsWith('video/');
+  if (!isVideo && req.file.size > config.maxUploadMb * 1024 * 1024) return reject(413, `File is larger than ${config.maxUploadMb} MB.`);
+  const quota = quotaBytes();
+  if (quota && userUsage(req.session.userId).total + req.file.size > quota) {
+    return reject(413, `This upload would go over your storage limit of ${config.storageQuotaMb} MB. Delete unused media, link the video from YouTube or Vimeo instead, or ask your administrator for more space.`);
+  }
   db.prepare('INSERT INTO media (id, user_id, filename, mime, size) VALUES (?, ?, ?, ?, ?)')
     .run(req.file.filename, req.session.userId, req.file.originalname.slice(0, 200), req.file.mimetype, req.file.size);
-  res.json({ url: `/media/${req.file.filename}`, name: req.file.originalname, mime: req.file.mimetype });
+  resetUsageCache();
+  res.json({ url: `/media/${req.file.filename}`, name: req.file.originalname, mime: req.file.mimetype, size: req.file.size });
+});
+
+// The signed-in teacher's own storage use (sidebar meter).
+apiRouter.get('/api/storage', requireUser, (req, res) => {
+  res.json({ ...userUsage(req.session.userId), quota: quotaBytes(), maxUploadMb: config.maxUploadMb, maxVideoMb: config.maxVideoMb });
 });
 
 // ---------- embed (deep linking response) ----------
@@ -333,6 +348,17 @@ export function cleanSnapshot(html) {
     .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
     .replace(/\s(href|src|xlink:href|action|formaction|srcset)\s*=\s*("|')\s*(javascript|data|vbscript):[^"']*\2/gi, '')
     .replace(/\s(href|src|xlink:href|action|formaction)\s*=\s*(javascript|data|vbscript):[^\s>]*/gi, '');
+}
+
+// Plain-text answer record; shown with textContent only, but kept small and well-formed.
+export function cleanResponses(list) {
+  if (!Array.isArray(list)) return null;
+  const t = (v, n) => (v === undefined || v === null ? '' : String(v).slice(0, n));
+  const out = list.slice(0, 500).filter((r) => r && typeof r === 'object').map((r) => ({
+    key: t(r.key, 80), question: t(r.question, 1000), answer: t(r.answer, 4000), correct: t(r.correct, 2000),
+    ok: r.ok === true ? true : r.ok === false ? false : null, note: t(r.note, 200),
+  }));
+  return out.length ? JSON.stringify(out) : null;
 }
 
 const linkKey = (lti) => lti.resourceLinkId || `content:${lti.contentId}`;
@@ -368,7 +394,8 @@ apiRouter.get('/api/assignment', requireSession, (req, res) => {
   if (lti?.kind !== 'player' || !lti.ags) return res.json({ graded: false });
   const c = db.prepare('SELECT * FROM contents WHERE id = ?').get(lti.contentId);
   if (!c) return res.status(404).json({ error: 'Content not found.' });
-  res.json({ graded: true, ...summary(lti, gradingFor(c.type, JSON.parse(c.data))) });
+  const grading = gradingFor(c.type, JSON.parse(c.data));
+  res.json({ graded: true, ...forStudent(summary(lti, grading), grading) });
 });
 
 /**
@@ -403,9 +430,9 @@ apiRouter.post('/api/score', requireSession, async (req, res) => {
   // Score sent to the gradebook: this attempt, or the best so far.
   let sent = score;
   if (score !== null && grading.keep === 'best' && before.best !== null) sent = Math.max(score, before.best);
-  db.prepare(`INSERT INTO submissions (id, content_id, platform_id, context_id, resource_link_id, lineitem, sub, user_name, attempt, mode, score, auto_score, max_score, sent_score, snapshot, passback)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`)
-    .run(id, c.id, lti.platformId, lti.contextId, linkKey(lti), lti.ags.lineitem, lti.sub, lti.name || '', attempt, grading.mode, score, autoScore, grading.max, sent, cleanSnapshot(req.body?.snapshot));
+  db.prepare(`INSERT INTO submissions (id, content_id, platform_id, context_id, resource_link_id, lineitem, sub, user_name, attempt, mode, score, auto_score, max_score, sent_score, snapshot, responses, passback)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`)
+    .run(id, c.id, lti.platformId, lti.contextId, linkKey(lti), lti.ags.lineitem, lti.sub, lti.name || '', attempt, grading.mode, score, autoScore, grading.max, sent, cleanSnapshot(req.body?.snapshot), cleanResponses(req.body?.responses));
 
   let passback = 'sent';
   try {
@@ -421,8 +448,15 @@ apiRouter.post('/api/score', requireSession, async (req, res) => {
   db.prepare('UPDATE submissions SET passback = ? WHERE id = ?').run(passback, id);
   db.prepare('INSERT INTO attempts (content_id, platform_id, sub, score, max_score, passback) VALUES (?, ?, ?, ?, ?, ?)')
     .run(c.id, lti.platformId, lti.sub, score ?? 0, grading.max, passback);
-  res.json({ id, score, sent, max: grading.max, mode: grading.mode, passback, ...summary(lti, grading) });
+  res.json(forStudent({ id, score, sent, max: grading.max, mode: grading.mode, passback, ...summary(lti, grading) }, grading));
 });
+
+// When the lecturer hides scores, students' API answers leave them out too (not just the page).
+function forStudent(o, grading) {
+  if (grading.showScore) return o;
+  const strip = (x) => (x ? { ...x, score: null, sent: null, autoScore: null } : x);
+  return { ...strip(o), best: null, counted: null, last: strip(o.last) };
+}
 
 // One submitted attempt with its snapshot: for the lecturer (SpeedGrader / results list) or the student who made it.
 function canSeeSubmission(session, sub) {
@@ -435,7 +469,8 @@ function canSeeSubmission(session, sub) {
 }
 const subOut = (x, withSnapshot) => ({
   id: x.id, attempt: x.attempt, mode: x.mode, score: x.score, autoScore: x.auto_score, max: x.max_score, sent: x.sent_score,
-  passback: x.passback, at: x.created_at, name: x.user_name, ...(withSnapshot ? { snapshot: x.snapshot || '' } : {}),
+  passback: x.passback, at: x.created_at, name: x.user_name,
+  ...(withSnapshot ? { snapshot: x.snapshot || '', responses: x.responses ? JSON.parse(x.responses) : [] } : {}),
 });
 apiRouter.get('/api/submissions/:id', requireSession, (req, res) => {
   const x = db.prepare('SELECT * FROM submissions WHERE id = ?').get(req.params.id);
@@ -443,7 +478,17 @@ apiRouter.get('/api/submissions/:id', requireSession, (req, res) => {
   const c = db.prepare('SELECT id, type, title FROM contents WHERE id = ?').get(x.content_id);
   // The other attempts by the same student on the same assignment, for switching between them.
   const all = db.prepare('SELECT * FROM submissions WHERE platform_id = ? AND resource_link_id = ? AND sub = ? ORDER BY attempt').all(x.platform_id, x.resource_link_id, x.sub);
-  res.json({ submission: subOut(x, true), content: c && { id: c.id, type: c.type, title: c.title }, attempts: all.map((a) => subOut(a, false)) });
+  let submission = subOut(x, true); let attempts = all.map((a) => subOut(a, false));
+  // A student looking at their own work sees only what the lecturer allows.
+  const l = req.session.lti;
+  const studentSelf = (l.kind === 'player' && !l.teacherAssignment) || (l.kind === 'review' && !l.instructor);
+  if (studentSelf) {
+    const full = db.prepare('SELECT type, data FROM contents WHERE id = ?').get(x.content_id);
+    const g = full ? gradingFor(full.type, JSON.parse(full.data)) : { showScore: true, showFeedback: true };
+    if (!g.showFeedback) submission.responses = submission.responses.map((r) => ({ ...r, correct: '', ok: null }));
+    if (!g.showScore) { submission = forStudent(submission, g); attempts = attempts.map((a) => forStudent(a, g)); }
+  }
+  res.json({ submission, content: c && { id: c.id, type: c.type, title: c.title }, attempts });
 });
 
 // Which submission a SpeedGrader launch opened.

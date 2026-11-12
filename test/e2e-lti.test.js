@@ -9,7 +9,7 @@ const TOOL_PORT = 3101;
 const MOCK_PORT = 4101;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'reach-studio-test-'));
 Object.assign(process.env, {
-  DATA_DIR: tmp, PUBLIC_URL: `http://localhost:${TOOL_PORT}`, ALLOW_INSECURE_PLATFORMS: 'true', PORT: String(TOOL_PORT), ADMIN_EMAILS: 'taylor@school.test',
+  DATA_DIR: tmp, PUBLIC_URL: `http://localhost:${TOOL_PORT}`, ALLOW_INSECURE_PLATFORMS: 'true', PORT: String(TOOL_PORT), ADMIN_EMAILS: 'taylor@school.test', STORAGE_QUOTA_MB: '1',
 });
 const { createApp } = await import('../src/server.js');
 const { startMockCanvas } = await import('./mock-canvas.js');
@@ -164,6 +164,18 @@ try {
     const fd2 = new FormData(); fd2.append('file', new Blob(['<svg onload=alert(1)>'], { type: 'image/svg+xml' }), 'x.svg');
     const bad = await fetch(`${TOOL}/api/uploads`, { method: 'POST', headers: { Authorization: `Bearer ${bootTokenOf(tok)}` }, body: fd2 });
     assert.equal(bad.status, 400);
+    // Storage is measured from the files on disk; the 1 MB test quota blocks a bigger video.
+    const st = await teacher('GET', '/api/storage');
+    assert.equal(st.body.images, png.length); assert.equal(st.body.total, png.length); assert.equal(st.body.quota, 1024 * 1024);
+    const fd3 = new FormData(); fd3.append('file', new Blob([Buffer.alloc(1100 * 1024)], { type: 'video/mp4' }), 'big.mp4');
+    const over = await fetch(`${TOOL}/api/uploads`, { method: 'POST', headers: { Authorization: `Bearer ${bootTokenOf(tok)}` }, body: fd3 });
+    assert.equal(over.status, 413, 'over the storage quota');
+    assert.equal((await teacher('GET', '/api/storage')).body.total, png.length, 'rejected file is not kept');
+    const fd4 = new FormData(); fd4.append('file', new Blob([Buffer.alloc(300 * 1024)], { type: 'video/mp4' }), 'clip.mp4');
+    const ok = await fetch(`${TOOL}/api/uploads`, { method: 'POST', headers: { Authorization: `Bearer ${bootTokenOf(tok)}` }, body: fd4 });
+    assert.equal(ok.status, 200);
+    const st2 = (await teacher('GET', '/api/storage')).body;
+    assert.equal(st2.video, 300 * 1024); assert.equal(st2.files, 2);
   });
 
   await step('embedding returns a signed deep-linking response the platform accepts (RCE iframe)', async () => {
@@ -323,6 +335,44 @@ try {
     assert.equal(mock.state.assignments.at(-1).lineItem.scoreMaximum, 10);
   });
 
+  await step('hidden marking: students get no score or right/wrong; SpeedGrader gets every answer', async () => {
+    const c = await teacher('POST', '/api/contents', { type: 'quiz', title: 'Silent quiz', data: {
+      questions: [
+        { text: '<p>Powerhouse of the cell?</p>', options: [{ text: 'Mitochondrion', correct: true }, { text: 'Ribosome', correct: false }] },
+        { text: '<p>Holds DNA?</p>', options: [{ text: 'Nucleus', correct: true }, { text: 'Vacuole', correct: false }] }],
+      grading: { showFeedback: false, showScore: false } } });
+    const l = await launch('dl:assignment_selection');
+    const r = await api(bootToken(l.html))('POST', '/api/embed', { contentId: c.body.id });
+    await fetch(r.body.returnUrl, { method: 'POST', body: form({ JWT: r.body.jwt }) });
+    const idx = mock.state.assignments.length - 1;
+    const ls = await launch(`rl:assign-${idx}`, 'student');
+    const b = boot(ls.html);
+    assert.equal(b.grading.showFeedback, false); assert.equal(b.grading.showScore, false);
+    const s = api(b.token);
+    const responses = [
+      { key: 'q0', question: 'Powerhouse of the cell?', answer: 'Ribosome', correct: 'Mitochondrion', ok: false },
+      { key: 'q1', question: 'Holds DNA?', answer: 'Nucleus', correct: 'Nucleus', ok: true }];
+    const sub = await s('POST', '/api/score', { score: 1, snapshot: '<div class="rs">done</div>', responses });
+    assert.equal(sub.status, 200);
+    assert.equal(sub.body.score, null, 'score hidden from the student'); assert.equal(sub.body.counted, null);
+    assert.equal(mock.state.assignments[idx].scores['user-student-1'].scoreGiven, 1, 'but the gradebook gets it');
+    const own = await s('GET', `/api/submissions/${sub.body.id}`);
+    assert.equal(own.body.submission.score, null);
+    assert.ok(own.body.submission.responses.every((x) => x.correct === '' && x.ok === null), 'no correct answers for the student');
+    const sg = await launch(`rl:sg-${idx}.user-student-1`, 'teacher');
+    const t = api(bootToken(sg.html));
+    const rv = await t('GET', `/api/submissions/${(await t('GET', '/api/review')).body.id}`);
+    assert.equal(rv.body.submission.score, 1);
+    assert.deepEqual(rv.body.submission.responses.map((x) => [x.answer, x.correct, x.ok]), [['Ribosome', 'Mitochondrion', false], ['Nucleus', 'Nucleus', true]]);
+  });
+
+  await step('Video type: YouTube and Vimeo links are saved and the item is lecturer-graded in assignments', async () => {
+    const v = await teacher('POST', '/api/contents', { type: 'videoplayer', title: 'Welcome', data: { source: 'vimeo', link: 'https://vimeo.com/76979871/abcdef1234', title: 'Welcome' } });
+    assert.equal(v.status, 200, JSON.stringify(v.body));
+    const info = await teacher('POST', '/api/grading-info', { type: 'videoplayer', data: v.body.data || {} });
+    assert.equal(info.body.mode, 'manual'); assert.equal(info.body.max, 10);
+  });
+
   await step('admin view: ADMIN_EMAILS user is an admin; teachers are blocked from admin APIs', async () => {
     const me = await teacher('GET', '/api/me');
     assert.equal(me.body.user.role, 'admin');
@@ -331,12 +381,16 @@ try {
     assert.equal(stats.status, 200);
     assert.equal(stats.body.users, 2);
     assert.ok(stats.body.contents >= 3);
-    assert.equal(stats.body.gradesSent, 3, 'two auto-marked attempts and one lecturer-graded submission were sent');
+    assert.equal(stats.body.gradesSent, 4, 'three auto-marked attempts and one lecturer-graded submission were sent');
     const users = await teacher('GET', '/api/admin/users');
     const row = users.body.find((u) => u.email === 'taylor@school.test');
     assert.ok(row.contents >= 3); assert.equal(row.linked, 1);
     const detail = await teacher('GET', `/api/admin/users/${row.id}`);
-    assert.ok(detail.body.byType.some((r) => r.type === 'quiz'), 'usage by type');
+    assert.equal(detail.body.byType, undefined, 'no content-by-type breakdown');
+    assert.equal(detail.body.storage.images + detail.body.storage.video, detail.body.storage.total);
+    assert.equal(detail.body.storage.video, 300 * 1024, 'exact bytes on disk');
+    assert.equal(row.storage.total, detail.body.storage.total);
+    assert.equal(stats.body.storage.total, detail.body.storage.total);
     assert.equal(detail.body.contents, undefined, 'admins see usage, not other users\' content');
     assert.equal((await teacher('GET', `/api/admin/contents/${quizId}`)).status, 404, 'no admin content viewer');
   });
@@ -367,7 +421,7 @@ try {
     assert.equal((await t('GET', '/api/me')).body.user, null);
     const r = await t('POST', '/api/auth/login', { email: 'taylor@school.test', password: 'correct horse battery' });
     assert.equal(r.status, 200);
-    assert.equal((await t('GET', '/api/contents')).body.length, 4, 'quiz, hotspots, blanks and the essay');
+    assert.equal((await t('GET', '/api/contents')).body.length, 6, 'quiz, hotspots, blanks, essay, silent quiz and video');
   });
   const jpost = (p, body) => fetch(TOOL + p, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const loginAs = async (email, password) => { const r = await jpost('/api/auth/login', { email, password }); return { status: r.status, body: await r.json() }; };

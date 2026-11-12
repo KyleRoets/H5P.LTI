@@ -1,4 +1,4 @@
-import { h, textField, selectField, mediaField, listEditor, optionsEditor, safeUrl, richField, richBlock, isBlank, colorField, choiceQuestion, feedback, emptyState } from '../util.js';
+import { h, textField, selectField, mediaField, listEditor, optionsEditor, safeUrl, richField, richBlock, isBlank, colorField, choiceQuestion, feedback, emptyState, htmlToText, checkLabel } from '../util.js';
 import { icon } from '../icons.js';
 
 const LAYOUTS = [['title', 'Title slide'], ['text', 'Text only'], ['image-right', 'Text + image on the right'], ['image-left', 'Image on the left + text'], ['image-full', 'Full-screen image with caption']];
@@ -97,7 +97,8 @@ export default {
           const btn = h('button', { class: 'btn sm primary rs-accent-btn', type: 'button', onclick: () => {
             const ok = q.check(); if (ok === null) return;
             results.set(s, ok); btn.remove(); fb.append(feedback(ok)); drawDots();
-          } }, icon('check', { size: 15 }), h('span', {}, 'Check'));
+            ctx.record?.({ key: `s${slides.indexOf(s)}`, question: `${s.title ? `${s.title}: ` : ''}${htmlToText(s.question.text) || `Slide ${idx + 1} question`}`, ...q.describe() });
+          } }, icon('check', { size: 15 }), h('span', {}, checkLabel()));
           content.append(h('div', { class: 'slide-q' }, q.el, h('div', { class: 'rs-actions' }, btn), fb));
         }
       }

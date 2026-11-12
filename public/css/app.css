@@ -365,6 +365,21 @@ table.users td.num { font-variant-numeric: tabular-nums; }
 .ud-stats div { background: #fafbfd; border: 1px solid var(--line-2); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; }
 .ud-stats strong { color: var(--navy); }
 .ud-stats span { font-size: 12px; color: var(--muted); }
+.side-storage { margin-top: 18px; padding: 12px 4px 0; border-top: 1px solid var(--line-2); display: grid; gap: 6px; font-size: 13px; }
+.side-storage-l { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+.side-storage-l b { margin-left: auto; color: var(--ink); }
+.side-storage .storage-bar { height: 7px; }
+.side-storage .help { margin: 0; font-size: 12px; }
+.storage-panel { padding: 0 16px 14px; display: grid; gap: 8px; }
+.storage { display: grid; gap: 8px; }
+.storage-total strong { font-size: 20px; color: var(--navy); }
+.storage-total .muted { color: var(--muted); font-size: 13px; }
+.storage-bar { height: 12px; border-radius: 99px; background: var(--line-2); display: flex; overflow: hidden; }
+.storage-bar span { display: block; height: 100%; min-width: 2px; }
+.storage-kinds { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 14px; font-size: 13.5px; }
+.storage-kinds li { display: flex; gap: 6px; align-items: center; color: var(--muted); }
+.storage-kinds b { margin-left: auto; color: var(--ink); font-weight: 650; }
+.storage-kinds .sw { width: 10px; height: 10px; border-radius: 3px; flex: none; }
 .ud-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .ud-actions .help { margin: 0; }
 .user-detail h5 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
@@ -436,6 +451,37 @@ table.users td.num { font-variant-numeric: tabular-nums; }
 
 /* assignments: submit bar, submitted state, lecturer results, SpeedGrader review */
 body.rs-assignment .rs-retry, body.rs-no-reveal .rs-reveal { display: none !important; }
+/* Marking hidden by the lecturer: answers are still checked (classes stay for the score and the
+   lecturer's snapshot) but students see neutral "answered" styling, no ticks, crosses or scores. */
+body.rs-hide-feedback :is(.rs-feedback, .rs-score, .rs-score-line, .rs-result, .rs-solution, .rs-kw, .rs-sample, .rs-arith-fb, .rs-dict-result, .rs-dict-answer, .rs-legend) { display: none !important; }
+body.rs-hide-feedback .rs-pin:is(.ok, .no) { background: var(--rs-accent) !important; }
+body.rs-hide-feedback .rs-option:is(.correct, .wrong) { border-color: color-mix(in srgb, var(--rs-fg) 16%, transparent) !important; background: var(--rs-bg) !important; color: inherit !important; }
+body.rs-hide-feedback .rs-option.selected:is(.correct, .wrong) { border-color: var(--rs-accent) !important; background: color-mix(in srgb, var(--rs-accent) 8%, var(--rs-bg)) !important; }
+body.rs-hide-feedback .rs-option:is(.correct, .wrong) .mark { background: transparent !important; border-color: #9aa6ba !important; color: transparent !important; }
+body.rs-hide-feedback .rs-option.selected:is(.correct, .wrong) .mark { background: var(--rs-accent) !important; border-color: var(--rs-accent) !important; color: #fff !important; }
+body.rs-hide-feedback :is(.rs-drag, .rs-sort-item, .rs-cloze input, .rs-arith-input, .rs-cw-sq):is(.correct, .wrong, .ok, .no) { border-color: var(--rs-accent) !important; background: var(--rs-bg) !important; color: inherit !important; text-decoration: none !important; }
+body.rs-hide-feedback .rs-word:is(.correct, .wrong, .missed) { background: color-mix(in srgb, var(--rs-accent) 22%, transparent) !important; outline: 2px solid var(--rs-accent) !important; text-decoration: none !important; }
+body.rs-hide-feedback .rs-word.missed:not(.selected) { background: none !important; outline: none !important; }
+body.rs-hide-feedback .rs-findhs.reveal .rs-fz { border-color: transparent !important; background: transparent !important; }
+body.rs-hide-feedback .rs-ws-cell.missed { background: none !important; outline: none !important; }
+body.rs-hide-feedback .rs-chip.done { background: var(--rs-bg); border-color: color-mix(in srgb, var(--rs-fg) 16%, transparent); color: var(--rs-fg); }
+/* book chapters are kept while reading; the lecturer's snapshot shows every chapter visited */
+.rs-book-hidden { display: none !important; }
+.snapshot-body .rs-book-hidden { display: block !important; border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 14px; }
+.snapshot-body .rs-book-nav, .snapshot-body .rs-book-side, .snapshot-body .rs-book-tocbtn { display: none !important; }
+/* the lecturer's question-by-question record */
+.responses { margin: 0 0 14px; }
+.responses h4, .review-sub { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.resp-sum { text-transform: none; letter-spacing: 0; color: var(--navy); font-weight: 750; }
+.responses table { width: 100%; border-collapse: collapse; font-size: 14px; background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.responses th { text-align: left; font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); padding: 7px 10px; background: #f6f8fc; border-bottom: 1px solid var(--line); }
+.responses td { padding: 8px 10px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+.responses td.num { color: var(--muted); width: 28px; }
+.responses tr.is-wrong td:nth-child(3) { color: #8a1f17; }
+.responses tr.is-right td:nth-child(3) { color: #0f5f3c; }
+.resp-ok, .resp-no, .resp-na { display: inline-flex; gap: 4px; align-items: center; font-weight: 700; white-space: nowrap; }
+.resp-ok { color: var(--green); } .resp-no { color: var(--red); } .resp-na { color: var(--muted); }
+@media (max-width: 640px) { .responses table, .responses tbody, .responses tr, .responses td { display: block; } .responses thead { display: none; } .responses td { border: 0; padding: 3px 10px; } .responses tr { border-bottom: 1px solid var(--line-2); padding: 6px 0; } }
 .assign-bar { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; background: #F3F7FD; border: 1px solid #D8E4F5; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; position: sticky; top: 0; z-index: 5; }
 .assign-meta { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13.5px; color: var(--muted); }
 .assign-tag { display: inline-flex; gap: 6px; align-items: center; font-weight: 750; color: var(--navy); }
@@ -555,6 +601,14 @@ table.results td.num { text-align: center; }
 /* video */
 .rs-video-wrap { position: relative; background: #000; border-radius: var(--rs-radius); overflow: hidden; aspect-ratio: 16/9; }
 .rs-video-wrap video, .rs-video-wrap .yt, .rs-video-wrap iframe { width: 100%; height: 100%; display: block; border: 0; }
+.rs-video-wrap .rs-embed { width: 100%; height: 100%; }
+.rs-videoplayer.portrait { max-width: 420px; margin: 0 auto; }
+.rs-videobox { display: grid; gap: 10px; }
+.rs-video-title { margin: 0; font-size: 1.2em; }
+.rs-video-notes { margin: 0; }
+.link-status { display: flex; gap: 6px; align-items: center; min-height: 18px; }
+.link-status.ok { color: var(--green); } .link-status.bad { color: var(--red); }
+.media-thumb.file { display: flex; gap: 8px; align-items: center; justify-content: center; padding: 14px; color: var(--muted); font-weight: 650; }
 .rs-overlay { position: absolute; inset: 0; background: rgba(10,16,30,.72); display: grid; place-items: center; padding: 16px; z-index: 3; }
 .rs-overlay-card { background: var(--rs-bg); color: var(--rs-fg); border-radius: var(--rs-radius); padding: 18px; width: min(560px, 100%); max-height: 100%; overflow: auto; border-top: 4px solid var(--rs-accent); }
 .rs-overlay-card h3 { margin: 0 0 8px; }

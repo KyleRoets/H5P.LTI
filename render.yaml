@@ -11,7 +11,7 @@ services:
     disk:
       name: reach-studio-data
       mountPath: /data
-      sizeGB: 1
+      sizeGB: 1             # uploads live here: raise it if teachers upload video (see README, Media storage)
     envVars:
       - key: TRUST_PROXY
         value: "true"

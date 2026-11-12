@@ -254,8 +254,9 @@ export function mediaField(label, obj, key, onChange, ctx, opts = {}) {
       try { const r = await ctx.api.upload(f); obj[key] = r.url; onChange(); draw(); } catch (err) { toast(err.message, 'error'); up.disabled = false; up.lastChild.textContent = 'Upload'; }
     } });
     const up = h('button', { class: 'btn sm', type: 'button', onclick: () => file.click() }, icon('upload', { size: 15 }), h('span', {}, url ? 'Replace' : 'Upload'));
-    if (url) wrap.append(h('div', { class: 'media-thumb' }, opts.audio ? h('audio', { src: url, controls: true, preload: 'none' }) : opts.video && !/youtu/.test(url) ? h('video', { src: url, controls: true, preload: 'metadata' }) : opts.video ? h('div', { class: 'yt-thumb' }, icon('type-video', { size: 28 }), 'YouTube video') : h('img', { src: url, alt: '' })));
-    else wrap.append(h('button', { type: 'button', class: 'media-drop', onclick: () => file.click() }, icon(opts.audio ? 'type-dictation' : opts.video ? 'type-video' : 'image', { size: 26 }), h('span', {}, opts.audio ? 'Click to upload an MP3 recording' : opts.video ? 'Click to upload an MP4 or WebM video' : 'Click to upload an image')));
+    if (url && opts.file) wrap.append(h('div', { class: 'media-thumb file' }, icon('list', { size: 22 }), h('span', {}, opts.file)));
+    else if (url) wrap.append(h('div', { class: 'media-thumb' }, opts.audio ? h('audio', { src: url, controls: true, preload: 'none' }) : opts.video && !/youtu/.test(url) ? h('video', { src: url, controls: true, preload: 'metadata' }) : opts.video ? h('div', { class: 'yt-thumb' }, icon('type-video', { size: 28 }), 'YouTube video') : h('img', { src: url, alt: '' })));
+    else wrap.append(h('button', { type: 'button', class: 'media-drop', onclick: () => file.click() }, icon(opts.audio ? 'type-dictation' : opts.video ? 'type-video' : 'image', { size: 26 }), h('span', {}, opts.file ? `Click to upload a ${opts.file.toLowerCase()}` : opts.audio ? 'Click to upload an MP3 recording' : opts.video ? 'Click to upload an MP4 or WebM video' : 'Click to upload an image')));
     // Media must be uploaded: links to files elsewhere can break or change without notice.
     wrap.append(h('div', { class: 'row' }, up, file, obj[key] && iconBtn('trash', 'Remove', () => { obj[key] = ''; onChange(); draw(); })));
   };
@@ -510,14 +511,29 @@ export function choiceQuestion(q, { shuffleOptions = false, onAnswered } = {}) {
         b.disabled = true;
         const isSel = selected.has(b._o.i);
         if (b._o.correct) b.classList.add('correct');
-        if (isSel && !b._o.correct) { b.classList.add('wrong'); b.querySelector('.mark').replaceChildren(icon('x', { size: 13, stroke: 3 })); ok = false; }
+        if (isSel && !b._o.correct) { b.classList.add('wrong'); if (!feedbackHidden()) b.querySelector('.mark').replaceChildren(icon('x', { size: 13, stroke: 3 })); ok = false; }
         if (!isSel && b._o.correct) ok = false;
       });
       return ok;
     },
     reset() { locked = false; selected.clear(); buttons.forEach((b) => { b.disabled = false; b.className = `rs-option ${multi ? 'multi' : ''}`; }); },
+    /** What was chosen vs. what was right, as plain text (for the lecturer's answer record). */
+    describe() {
+      const chosen = opts.filter((o) => selected.has(o.i)).map((o) => o.text);
+      const right = opts.filter((o) => o.correct).map((o) => o.text);
+      const ok = chosen.length === right.length && opts.every((o) => selected.has(o.i) === !!o.correct);
+      return { answer: chosen.join('; ') || '(no answer)', correct: right.join('; '), ok };
+    },
   };
 }
+
+/**
+ * When a lecturer hides marking (assignment setting), activities still check answers — so the
+ * score and SpeedGrader record are right — but students don't see right/wrong. Buttons then say
+ * "Save answer" instead of "Check".
+ */
+export const feedbackHidden = () => document.body.classList.contains('rs-hide-feedback');
+export const checkLabel = () => (feedbackHidden() ? 'Save answer' : 'Check');
 
 export const feedback = (ok, good = 'Correct!', bad = 'Not quite.') =>
   h('div', { class: `rs-feedback ${ok ? 'good' : 'bad'}`, role: 'status' }, icon(ok ? 'check' : 'x', { size: 16, stroke: 3 }), h('span', { class: 'rs-text', html: richHtml(ok ? good : bad) }));
@@ -637,7 +653,7 @@ export function dragSystem(root, { onDrop }) {
 
 /** Standard check / retry / solution action row. */
 export function actionRow({ onCheck, onRetry, onShow }) {
-  const check = h('button', { class: 'btn primary rs-accent-btn', type: 'button', onclick: () => onCheck() }, icon('check', { size: 16 }), h('span', {}, 'Check'));
+  const check = h('button', { class: 'btn primary rs-accent-btn', type: 'button', onclick: () => onCheck() }, icon('check', { size: 16 }), h('span', {}, feedbackHidden() ? 'Done' : 'Check'));
   const retry = h('button', { class: 'btn hidden rs-retry', type: 'button', onclick: () => onRetry() }, icon('restore', { size: 16 }), h('span', {}, 'Try again'));
   const show = onShow && h('button', { class: 'btn hidden rs-reveal', type: 'button', onclick: () => onShow() }, icon('eye', { size: 16 }), h('span', {}, 'Show answers'));
   const score = h('span', { class: 'rs-score hidden' });
