@@ -13,6 +13,7 @@ import { signingKey, publicJwks } from './keys.js';
 import { createSession } from './sessions.js';
 import { views } from './views.js';
 import { TYPES, embedSize, gradingFor } from './types.js';
+import { quizLaunch } from './quizzes.js';
 
 const C = {
   MSG: 'https://purl.imsglobal.org/spec/lti/claim/message_type',
@@ -48,11 +49,11 @@ export function findPlatform(issuer, clientId) {
 }
 
 export function upsertPlatform(p) {
-  db.prepare(`INSERT INTO platforms (name, issuer, client_id, auth_url, token_url, jwks_url)
-              VALUES (?, ?, ?, ?, ?, ?)
+  db.prepare(`INSERT INTO platforms (name, issuer, client_id, auth_url, token_url, jwks_url, app)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
               ON CONFLICT(issuer, client_id) DO UPDATE SET name=excluded.name, auth_url=excluded.auth_url,
-              token_url=excluded.token_url, jwks_url=excluded.jwks_url`)
-    .run(p.name || p.issuer, p.issuer, String(p.client_id), p.auth_url, p.token_url, p.jwks_url);
+              token_url=excluded.token_url, jwks_url=excluded.jwks_url, app=excluded.app`)
+    .run(p.name || p.issuer, p.issuer, String(p.client_id), p.auth_url, p.token_url, p.jwks_url, p.app === 'quizzes' ? 'quizzes' : 'studio');
   return findPlatform(p.issuer, p.client_id);
 }
 
@@ -147,7 +148,41 @@ function messages() {
   ];
 }
 
-export function registrationPayload() {
+// ReachQuizzes: one course menu item for everyone in the course, off until a teacher switches it on
+// (Settings → Navigation), opening inside ReachLMS. Same server, keys and accounts as ReachStudio.
+const QUIZ_SCOPES = [
+  'https://purl.imsglobal.org/spec/lti-ags/scope/lineitem',
+  'https://purl.imsglobal.org/spec/lti-ags/scope/score',
+  'https://purl.imsglobal.org/spec/lti-ags/scope/result.readonly',
+];
+function quizMessages() {
+  return [{
+    type: 'LtiResourceLinkRequest',
+    target_link_uri: url('/lti/launch?app=quizzes&placement=course_navigation'),
+    label: config.quizNavLabel,
+    icon_uri: iconUrl(),
+    placements: ['course_navigation'],
+    'https://canvas.instructure.com/lti/course_navigation/default_enabled': false,
+    'https://canvas.instructure.com/lti/display_type': 'default',
+  }];
+}
+
+export function registrationPayload(app = 'studio') {
+  if (app === 'quizzes') {
+    const base = registrationPayload('studio');
+    return {
+      ...base,
+      client_name: config.quizToolName,
+      scope: QUIZ_SCOPES.join(' '),
+      [C.TOOL_CFG]: {
+        ...base[C.TOOL_CFG],
+        target_link_uri: url('/lti/launch?app=quizzes'),
+        description: `${config.quizToolName}: quizzes built with ReachStudio activities, in the course menu. Each published quiz is a graded assignment with SpeedGrader.`,
+        messages: quizMessages(),
+        'https://canvas.instructure.com/lti/tool_id': 'reach-quizzes',
+      },
+    };
+  }
   const domain = new URL(config.publicUrl).host;
   return {
     application_type: 'web',
@@ -171,6 +206,30 @@ export function registrationPayload() {
       'https://canvas.instructure.com/lti/tool_id': 'reach-studio',
       'https://canvas.instructure.com/lti/vendor': 'ReachLMS',
     },
+  };
+}
+
+export function canvasQuizJsonConfig() {
+  return {
+    title: config.quizToolName,
+    description: 'Quizzes built with ReachStudio activities, in the course menu. Each published quiz is a graded assignment with SpeedGrader.',
+    oidc_initiation_url: url('/lti/login'),
+    target_link_uri: url('/lti/launch?app=quizzes'),
+    public_jwk_url: url('/.well-known/jwks.json'),
+    scopes: QUIZ_SCOPES,
+    extensions: [{
+      platform: 'canvas.instructure.com',
+      domain: new URL(config.publicUrl).host,
+      tool_id: 'reach-quizzes',
+      privacy_level: 'public',
+      settings: {
+        text: config.quizNavLabel,
+        icon_url: iconUrl(),
+        placements: [
+          { placement: 'course_navigation', message_type: 'LtiResourceLinkRequest', target_link_uri: url('/lti/launch?app=quizzes&placement=course_navigation'), text: config.quizNavLabel, default: 'disabled', display_type: 'default' },
+        ],
+      },
+    }],
   };
 }
 
@@ -267,6 +326,33 @@ export async function postScore(platform, lineitem, { sub, scoreGiven, scoreMaxi
   return true;
 }
 
+// ---------- AGS line items: ReachQuizzes publishes each quiz as an assignment ----------
+const LINEITEM_SCOPE = 'https://purl.imsglobal.org/spec/lti-ags/scope/lineitem';
+async function agsFetch(platform, u, { method = 'GET', body, type = 'application/vnd.ims.lis.v2.lineitem+json' } = {}) {
+  const token = await getAccessToken(platform, [LINEITEM_SCOPE]);
+  const res = await fetch(internalUrl(u), {
+    method,
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.ims.lis.v2.lineitem+json, application/json', ...(body ? { 'Content-Type': type } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`ReachLMS gradebook request failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
+  return res.status === 204 ? null : res.json().catch(() => null);
+}
+/**
+ * Creates the quiz's assignment: a line item with Canvas's submission-type extension, so ReachLMS
+ * makes a real External Tool assignment (gradebook column, Assignments page, SpeedGrader) that
+ * opens this quiz. Returns the line item (its id is the URL scores are posted to).
+ */
+export function createLineItem(platform, lineitemsUrl, { label, scoreMaximum, resourceId, launchUrl }) {
+  return agsFetch(platform, lineitemsUrl, { method: 'POST', body: {
+    label, scoreMaximum, resourceId, tag: 'reach-quizzes',
+    'https://canvas.instructure.com/lti/submission_type': { type: 'external_tool', external_tool_url: launchUrl },
+  } });
+}
+export const getLineItem = (platform, lineitemUrl) => agsFetch(platform, lineitemUrl);
+export const updateLineItem = (platform, lineitemUrl, body) => agsFetch(platform, lineitemUrl, { method: 'PUT', body });
+export const deleteLineItem = (platform, lineitemUrl) => agsFetch(platform, lineitemUrl, { method: 'DELETE' });
+
 // ---------- Deep linking response ----------
 export const GRADED_PLACEMENTS = ['assignment_selection', 'submission_type_selection'];
 export async function buildDeepLinkResponse(lti, content) {
@@ -318,6 +404,7 @@ ltiRouter.use(express.urlencoded({ extended: false }));
 
 ltiRouter.get('/.well-known/jwks.json', (req, res) => res.json(publicJwks()));
 ltiRouter.get('/lti/canvas-config.json', (req, res) => res.json(canvasJsonConfig()));
+ltiRouter.get('/lti/quizzes-config.json', (req, res) => res.json(canvasQuizJsonConfig()));
 
 // Step 1: OIDC login initiation (Canvas -> tool), GET or POST.
 ltiRouter.all('/lti/login', (req, res) => {
@@ -395,11 +482,20 @@ ltiRouter.post('/lti/launch', async (req, res) => {
       placement,
     };
     const identity = payload.sub
-      ? db.prepare('SELECT user_id FROM lti_identities WHERE platform_id = ? AND sub = ? AND active = 1').get(platform.id, payload.sub)
+      // Any registration on the same ReachLMS site (ReachStudio and ReachQuizzes share accounts).
+      ? db.prepare(`SELECT i.user_id FROM lti_identities i JOIN platforms p ON p.id = i.platform_id
+          WHERE p.issuer = ? AND i.sub = ? AND i.active = 1 ORDER BY (i.platform_id = ?) DESC LIMIT 1`).get(platform.issuer, payload.sub, platform.id)
       : null;
     const userId = identity?.user_id || null;
 
     const msgType = payload[C.MSG];
+    let app = platform.app === 'quizzes' ? 'quizzes' : null;
+    let quizId = null;
+    try { const t = new URL(target); app = app || (t.searchParams.get('app') === 'quizzes' ? 'quizzes' : null); quizId = t.searchParams.get('quiz'); } catch { /* ignore */ }
+    const ags = payload[C.AGS] || null;
+    if (msgType === 'LtiResourceLinkRequest' && !reviewId && (app === 'quizzes' || quizId)) {
+      return quizLaunch(res, { lti, userId, quizId, ags, payload });
+    }
     if (msgType === 'LtiDeepLinkingRequest') {
       const dl = payload[C.DL] || {};
       if (!dl.deep_link_return_url) throw new Error('Missing deep_link_return_url.');
@@ -461,15 +557,17 @@ ltiRouter.post('/lti/launch', async (req, res) => {
 // ---------- Dynamic Registration ----------
 ltiRouter.get('/lti/register', (req, res) => {
   const { openid_configuration: oc, registration_token: rt } = req.query;
-  if (!oc) return res.status(400).send(views.message('Dynamic Registration', `Paste <code>${views.esc(url('/lti/register'))}</code> into ReachLMS → Admin → Developer Keys (or Apps) → + Dynamic Registration.`));
-  res.send(views.register(oc, rt || '', !!config.registrationCode));
+  const app = req.query.app === 'quizzes' ? 'quizzes' : 'studio';
+  if (!oc) return res.status(400).send(views.message('Dynamic Registration', `Paste <code>${views.esc(url(app === 'quizzes' ? '/lti/register?app=quizzes' : '/lti/register'))}</code> into ReachLMS → Admin → Developer Keys (or Apps) → + Dynamic Registration.`));
+  res.send(views.register(oc, rt || '', !!config.registrationCode, '', app));
 });
 
 ltiRouter.post('/lti/register', async (req, res) => {
   try {
     const { openid_configuration: oc, registration_token: rt, code } = req.body;
+    const app = req.body.app === 'quizzes' ? 'quizzes' : 'studio';
     if (config.registrationCode && code !== config.registrationCode) {
-      return res.status(403).send(views.register(oc, rt, true, 'That installation code is not correct.'));
+      return res.status(403).send(views.register(oc, rt, true, 'That installation code is not correct.', app));
     }
     const ocUrl = new URL(oc);
     if (ocUrl.protocol !== 'https:' && !config.allowInsecure) throw new Error('openid_configuration must use https.');
@@ -484,7 +582,7 @@ ltiRouter.post('/lti/register', async (req, res) => {
     const regRes = await fetch(internalUrl(pc.registration_endpoint), {
       method: 'POST',
       headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify(registrationPayload()),
+      body: JSON.stringify(registrationPayload(app)),
     });
     if (!regRes.ok) throw new Error(`Registration was rejected (${regRes.status}): ${await regRes.text()}`);
     const reg = await regRes.json();
@@ -496,11 +594,12 @@ ltiRouter.post('/lti/register', async (req, res) => {
       auth_url: pc.authorization_endpoint,
       token_url: pc.token_endpoint,
       jwks_url: pc.jwks_uri,
+      app,
     });
     const dep = reg[C.TOOL_CFG]?.deployment_id;
     if (dep) db.prepare('INSERT OR IGNORE INTO deployments (platform_id, deployment_id) VALUES (?, ?)').run(platform.id, dep);
     console.log(`Registered platform ${platform.issuer} client_id=${platform.client_id}`);
-    res.send(views.registered(platformName, platform.client_id));
+    res.send(views.registered(platformName, platform.client_id, app));
   } catch (err) {
     console.error('Registration error:', err);
     res.status(400).send(views.message('Registration failed', views.esc(err.message)));

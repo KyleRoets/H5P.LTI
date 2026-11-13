@@ -137,6 +137,24 @@ db.exec(`CREATE TABLE IF NOT EXISTS submissions (
   created_at TEXT DEFAULT (datetime('now'))
 )`);
 db.exec('CREATE INDEX IF NOT EXISTS submissions_link ON submissions (platform_id, resource_link_id, sub)');
+// Which LTI registration a client ID belongs to: 'studio' (editor button, assignments, library)
+// or 'quizzes' (the ReachQuizzes course menu item).
+if (!db.prepare('PRAGMA table_info(platforms)').all().some((c) => c.name === 'app')) db.exec("ALTER TABLE platforms ADD COLUMN app TEXT NOT NULL DEFAULT 'studio'");
+// ReachQuizzes: a quiz in a course = a ReachStudio item + the gradebook column (AGS line item) it publishes to.
+db.exec(`CREATE TABLE IF NOT EXISTS course_quizzes (
+  id TEXT PRIMARY KEY,
+  platform_id INTEGER NOT NULL,
+  context_id TEXT NOT NULL,
+  content_id TEXT NOT NULL,
+  title TEXT NOT NULL,
+  lineitem TEXT,
+  points REAL,
+  created_by TEXT,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT DEFAULT (datetime('now')),
+  published_at TEXT
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS course_quizzes_ctx ON course_quizzes (platform_id, context_id)');
 // Question-by-question answers (JSON), for activities that show one question at a time.
 if (!db.prepare('PRAGMA table_info(submissions)').all().some((c) => c.name === 'responses')) db.exec('ALTER TABLE submissions ADD COLUMN responses TEXT');
 

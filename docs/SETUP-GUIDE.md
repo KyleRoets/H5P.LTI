@@ -232,6 +232,17 @@ Installing at the top **Admin** account makes it available in every course. To p
 
 ---
 
+### 3.4 Optional: install ReachQuizzes (the Quizzes+ course menu item)
+
+This is a second, small registration from the same ReachStudio server.
+1. **Admin → Developer Keys → + Dynamic Registration**, and paste `https://YOUR-ADDRESS/lti/register?app=quizzes`.
+2. Click **Install**, then switch the new **ReachQuizzes** key **ON**. Add it under **Settings → Apps** if it isn't listed there.
+3. It is **off in every course** until a teacher switches it on, in **Settings → Navigation**: drag **Quizzes+** up, and optionally drag ReachLMS's own **Quizzes** down to hide it.
+
+To change the menu label (for example to "Quizzes", "Quiz Hub" or "Assessments"), set `QUIZ_NAV_LABEL` on Render **before** step 1. ReachLMS saves the label when the tool is installed.
+
+---
+
 ## Part 4: Test it in a real ReachLMS course
 
 Use a sandbox or test course where you're the teacher.
@@ -271,7 +282,16 @@ Use a sandbox or test course where you're the teacher.
 
 On the free Render plan you re-register after every deploy anyway.
 
-### 4.4 Other places worth checking
+### 4.4 ReachQuizzes (if installed)
+
+1. In the course, **Settings → Navigation**: drag **Quizzes+** into the visible list, then **Save**.
+2. Click **Quizzes+**, then **Add a quiz**. Pick a Quiz from your library, or create one.
+3. Optionally, on its **Grading** tab, turn off *Show whether each answer is right or wrong* for exam mode.
+4. Click **Publish**. **You should see** a new assignment with the same name on the **Assignments** page.
+5. In **Student View**, open **Quizzes+**, take the quiz and press **Submit**. **You should see** it move to *Submitted*.
+6. As the teacher, **SpeedGrader** shows the attempt and every answer. **Quizzes+ → Results** shows the same.
+
+### 4.5 Other places worth checking
 
 - **Discussions:** the editor button works when writing a post.
 - **Classic Quizzes:** the editor button works in a question's text.

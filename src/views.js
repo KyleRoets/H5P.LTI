@@ -1,5 +1,6 @@
 // Server-rendered HTML shells. The interactive UI is plain ES modules in /public/js.
 import { config } from './config.js';
+import { isSecure, secureData } from './secure.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const json = (o) => JSON.stringify(o).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
@@ -23,17 +24,21 @@ export const views = {
 
   studio(token) {
     return shell(config.toolName, '<div id="app" class="app"><div class="loading">Loading ReachStudio…</div></div>', {
-      scripts: `<script>window.BOOT=${json({ token, toolName: config.toolName })}</script><script type="module" src="/js/v/${config.build}/studio.js"></script>`,
+      scripts: `<script>window.BOOT=${json({ token, toolName: config.toolName, build: config.build })}</script><script type="module" src="/js/v/${config.build}/studio.js"></script>`,
     });
   },
 
   player(token, content, opts = {}) {
     const boot = {
       token,
-      content: { id: content.id, type: content.type, title: content.title, data: JSON.parse(content.data) },
+      // Students in exam mode never receive the answer key (see secure.js).
+      content: { id: content.id, type: content.type, title: content.title,
+        data: opts.graded && !opts.teacher && isSecure(content.type, opts.grading) ? secureData(JSON.parse(content.data)) : JSON.parse(content.data) },
+      secure: !!(opts.graded && !opts.teacher && isSecure(content.type, opts.grading)),
       canEdit: !!opts.canEdit,
       graded: !!opts.graded,
       teacher: !!opts.teacher,
+      back: typeof opts.back === 'string' ? opts.back : '',
       build: config.build,
       grading: opts.grading || null,
       preview: !!opts.preview,
@@ -52,26 +57,42 @@ export const views = {
     });
   },
 
+  // ReachQuizzes for students: the course's published quizzes.
+  quizzes(token) {
+    return shell(config.quizToolName, '<main id="quizzes" class="quizzes-root"><div class="loading">Loading quizzes…</div></main>', {
+      bodyClass: 'player-body',
+      scripts: `<script>window.BOOT=${json({ token, build: config.build, label: config.quizNavLabel })}</script><script type="module" src="/js/v/${config.build}/quizzes-page.js"></script>`,
+    });
+  },
+
   message(title, html) {
     // The logo already names the tool, so the home page skips a repeated heading.
     const heading = title === config.toolName ? '' : `<h1>${esc(title)}</h1>`;
     return shell(title, `<div class="center-card">${brand}${heading}<p>${html}</p></div>`);
   },
 
-  register(oc, rt, needsCode, error = '') {
-    return shell(`Install ${config.toolName}`, `<div class="center-card">
+  register(oc, rt, needsCode, error = '', app = 'studio') {
+    const quizzes = app === 'quizzes';
+    const name = quizzes ? config.quizToolName : config.toolName;
+    return shell(`Install ${name}`, `<div class="center-card">
       ${brand}
-      <h1>Install ${esc(config.toolName)}</h1>
-      <p>This adds an interactive-content button to the Rich Content Editor, plus graded activities for assignments and modules.</p>
+      <h1>Install ${esc(name)}</h1>
+      ${quizzes ? `<p>This adds a <strong>${esc(config.quizNavLabel)}</strong> item to the course menu: quizzes built with ReachStudio activities, each one a graded assignment with SpeedGrader.</p>
+      <ul class="checklist">
+        <li>Course menu item for teachers and students, off until a teacher switches it on (Settings → Navigation)</li>
+        <li>Publishing a quiz creates its assignment and gradebook column</li>
+        <li>Uses the same accounts and content library as ReachStudio — install ReachStudio too</li>
+      </ul>` : `<p>This adds an interactive-content button to the Rich Content Editor, plus graded activities for assignments and modules.</p>
       <ul class="checklist">
         <li>Rich Content Editor button (pages, quizzes, assignments, discussions)</li>
         <li>Assignment and module activities with automatic grading</li>
         <li>Optional course navigation link for teachers (disabled by default)</li>
-      </ul>
+      </ul>`}
       ${error ? `<p class="error">${esc(error)}</p>` : ''}
       <form method="post" action="/lti/register">
         <input type="hidden" name="openid_configuration" value="${esc(oc)}">
         <input type="hidden" name="registration_token" value="${esc(rt)}">
+        <input type="hidden" name="app" value="${quizzes ? 'quizzes' : 'studio'}">
         ${needsCode ? '<label>Installation code<input name="code" required autocomplete="off"></label>' : ''}
         <button class="btn primary" type="submit">Install</button>
       </form></div>`);
@@ -91,10 +112,10 @@ export const views = {
       </div>`, { scripts: `<script type="module" src="/js/v/${config.build}/reset-page.js"></script>` });
   },
 
-  registered(name, clientId) {
+  registered(name, clientId, app = 'studio') {
     return shell('Installed', `<div class="center-card">
       ${brand}
-      <h1>${esc(config.toolName)} is registered</h1>
+      <h1>${esc(app === 'quizzes' ? config.quizToolName : config.toolName)} is registered</h1>
       <p>Registered with <strong>${esc(name)}</strong> (client ID <code>${esc(clientId)}</code>).</p>
       <p>Click <strong>Close</strong> below, then review and enable the tool in ReachLMS.</p>
       <button class="btn primary" onclick="(window.opener||window.parent).postMessage({subject:'org.imsglobal.lti.close'},'*')">Close</button>

@@ -38,10 +38,10 @@ const api = (token) => {
 };
 
 // Simulates the browser: login initiation -> platform auth -> form_post launch.
-async function launch(hint, as = 'teacher', { tamper = false, replay = false } = {}) {
+async function launch(hint, as = 'teacher', { tamper = false, replay = false, quizzes = false } = {}) {
   const st = await (await fetch(`${mock.base}/state`)).json();
   assert.ok(st.registered, 'tool must be registered first');
-  const clientId = mock.state.registration.client_id;
+  const clientId = (quizzes ? mock.state.quizRegistration : mock.state.registration).client_id;
   const r1 = await fetch(`${TOOL}/lti/login`, { method: 'POST', redirect: 'manual', body: form({ iss: mock.base, login_hint: as, client_id: clientId, lti_deployment_id: 'deployment-1', target_link_uri: `${TOOL}/lti/launch`, lti_message_hint: hint }) });
   assert.equal(r1.status, 302);
   const authUrl = new URL(r1.headers.get('location'));
@@ -358,11 +358,13 @@ try {
     const ls = await launch(`rl:assign-${idx}`, 'student');
     const b = boot(ls.html);
     assert.equal(b.grading.showFeedback, false); assert.equal(b.grading.showScore, false);
+    // Exam mode: the page gets the questions but not the answer key.
+    assert.equal(b.secure, true);
+    assert.ok(b.content.data.questions.every((q) => q.options.every((o) => !('correct' in o))), 'no answer key in the page');
     const s = api(b.token);
-    const responses = [
-      { key: 'q0', question: 'Powerhouse of the cell?', answer: 'Ribosome', correct: 'Mitochondrion', ok: false },
-      { key: 'q1', question: 'Holds DNA?', answer: 'Nucleus', correct: 'Nucleus', ok: true }];
-    const sub = await s('POST', '/api/score', { score: 1, snapshot: '<div class="rs">done</div>', responses });
+    // The page sends the choices; a claimed score is ignored and the server marks them.
+    const responses = [{ key: 'q0', picked: [1], ok: true, correct: 'forged' }, { key: 'q1', picked: [0] }];
+    const sub = await s('POST', '/api/score', { score: 2, snapshot: '<div class="rs">done</div>', responses });
     assert.equal(sub.status, 200);
     assert.equal(sub.body.score, null, 'score hidden from the student'); assert.equal(sub.body.counted, null);
     assert.equal(mock.state.assignments[idx].scores['user-student-1'].scoreGiven, 1, 'but the gradebook gets it');
@@ -383,6 +385,75 @@ try {
     assert.equal(info.body.mode, 'manual'); assert.equal(info.body.max, 10);
   });
 
+  await step('ReachQuizzes: second registration with a course menu item, off by default, for everyone', async () => {
+    const q = form({ app: 'quizzes', openid_configuration: `${mock.base}/api/lti/security/openid-configuration`, registration_token: mock.state.regToken });
+    const r = await fetch(`${TOOL}/lti/register`, { method: 'POST', body: q });
+    assert.equal(r.status, 200); assert.match(await r.text(), /ReachQuizzes is registered/);
+    const p = mock.state.quizRegistration.payload;
+    assert.equal(p.client_name, 'ReachQuizzes');
+    const msgs = p['https://purl.imsglobal.org/spec/lti-tool-configuration'].messages;
+    assert.deepEqual(msgs.map((m) => m.placements[0]), ['course_navigation']);
+    assert.equal(msgs[0].label, 'Quizzes+');
+    assert.equal(msgs[0]['https://canvas.instructure.com/lti/course_navigation/default_enabled'], false, 'teachers switch it on per course');
+    assert.equal(msgs[0]['https://canvas.instructure.com/lti/display_type'], 'default');
+    assert.equal(msgs[0].roles, undefined, 'students see it too');
+    assert.notEqual(mock.state.quizRegistration.client_id, mock.state.registration.client_id);
+    const cfg = await (await fetch(`${TOOL}/lti/quizzes-config.json`)).json();
+    assert.equal(cfg.extensions[0].settings.placements[0].default, 'disabled');
+  });
+
+  await step('ReachQuizzes: publish a quiz as an assignment; students take it in the course menu and from Assignments', async () => {
+    const lt = await launch('qnav:course', 'teacher', { quizzes: true });
+    assert.equal(lt.status, 200, lt.html); assert.match(lt.html, /studio\.js/);
+    const t = api(bootToken(lt.html));
+    const me = await t('GET', '/api/me');
+    assert.equal(me.body.user?.email, 'taylor@school.test', 'same account as ReachStudio (shared identity)');
+    assert.equal(me.body.lti.kind, 'quizzes');
+    const add = await t('POST', '/api/quizzes', { contentId: quizId });
+    assert.equal(add.status, 200, JSON.stringify(add.body));
+    let list = (await t('GET', '/api/quizzes')).body;
+    assert.equal(list.quizzes.length, 1); assert.equal(list.quizzes[0].published, false); assert.equal(list.canPublish, true);
+    // Students don't see drafts.
+    const ls0 = await launch('qnav:course', 'student', { quizzes: true });
+    assert.match(ls0.html, /quizzes-page\.js/);
+    assert.equal((await api(bootToken(ls0.html))('GET', '/api/quizzes')).body.quizzes.length, 0);
+    const before = mock.state.assignments.length;
+    const pub = await t('POST', `/api/quizzes/${add.body.id}/publish`);
+    assert.equal(pub.status, 200, JSON.stringify(pub.body));
+    const a = mock.state.assignments[before];
+    assert.equal(a.app, 'quizzes'); assert.equal(a.lineItem.scoreMaximum, 3);
+    assert.match(a.item.url, new RegExp(`/lti/launch\\?app=quizzes&quiz=${add.body.id}$`));
+    list = (await t('GET', '/api/quizzes')).body;
+    assert.equal(list.quizzes[0].published, true);
+    // Student: list → open → submit.
+    const s = api(bootToken(ls0.html));
+    const sl = (await s('GET', '/api/quizzes')).body.quizzes;
+    assert.equal(sl.length, 1); assert.equal(sl[0].used, 0); assert.equal(sl[0].points, 3);
+    const open = await s('POST', `/api/quizzes/${add.body.id}/open`);
+    const page = await fetch(TOOL + open.body.url);
+    const pb = boot(await page.text());
+    assert.equal(pb.graded, true); assert.match(pb.back, /^\/quiz\/list\?t=/);
+    assert.equal((await fetch(TOOL + pb.back)).status, 200, 'back to a fresh list'); assert.equal(pb.content.type, 'quiz');
+    const sub = await api(pb.token)('POST', '/api/score', { score: 3, snapshot: '<div class="rs">ok</div>' });
+    assert.equal(sub.body.passback, 'sent');
+    assert.equal(a.scores['user-student-1'].scoreGiven, 3, 'grade in the quiz\'s assignment');
+    assert.match(a.submissions['user-student-1'][0].url, /review=/);
+    assert.equal((await s('GET', '/api/quizzes')).body.quizzes[0].used, 1);
+    // From the Assignments page the same attempts count.
+    const la = await launch(`rl:assign-${before}`, 'student', { quizzes: true });
+    const ab = boot(la.html);
+    assert.equal(ab.graded, true);
+    assert.equal((await api(ab.token)('GET', '/api/assignment')).body.used, 1);
+    // Teacher: results and a submission view.
+    const res = await t('GET', `/api/quizzes/${add.body.id}/results`);
+    assert.equal(res.body.students.length, 1);
+    assert.equal((await t('GET', `/api/submissions/${res.body.students[0].attempts[0].id}`)).status, 200);
+    // Removing a published quiz deletes its assignment.
+    assert.equal((await t('DELETE', `/api/quizzes/${add.body.id}`)).status, 200);
+    assert.equal(a.deleted, true);
+    assert.equal((await t('GET', '/api/quizzes')).body.quizzes.length, 0);
+  });
+
   await step('admin view: ADMIN_EMAILS user is an admin; teachers are blocked from admin APIs', async () => {
     const me = await teacher('GET', '/api/me');
     assert.equal(me.body.user.role, 'admin');
@@ -391,7 +462,7 @@ try {
     assert.equal(stats.status, 200);
     assert.equal(stats.body.users, 2);
     assert.ok(stats.body.contents >= 3);
-    assert.equal(stats.body.gradesSent, 4, 'three auto-marked attempts and one lecturer-graded submission were sent');
+    assert.equal(stats.body.gradesSent, 5, 'four auto-marked attempts (one from ReachQuizzes) and one lecturer-graded submission were sent');
     const users = await teacher('GET', '/api/admin/users');
     const row = users.body.find((u) => u.email === 'taylor@school.test');
     assert.ok(row.contents >= 3); assert.equal(row.linked, 1);

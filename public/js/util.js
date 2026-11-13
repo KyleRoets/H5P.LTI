@@ -479,7 +479,8 @@ export function scaledStage(width) {
  */
 export function choiceQuestion(q, { shuffleOptions = false, onAnswered } = {}) {
   const correctCount = q.options.filter((o) => o.correct).length;
-  const multi = correctCount > 1;
+  // Exam mode: the answer key isn't in the page; the server says whether it's multi-select.
+  const multi = q._secure ? !!q.multi : correctCount > 1;
   const opts = (shuffleOptions ? shuffle(q.options.map((o, i) => ({ ...o, i }))) : q.options.map((o, i) => ({ ...o, i }))).filter((o) => o.text?.trim() || o.correct);
   const selected = new Set();
   let locked = false;
@@ -522,7 +523,7 @@ export function choiceQuestion(q, { shuffleOptions = false, onAnswered } = {}) {
       const chosen = opts.filter((o) => selected.has(o.i)).map((o) => o.text);
       const right = opts.filter((o) => o.correct).map((o) => o.text);
       const ok = chosen.length === right.length && opts.every((o) => selected.has(o.i) === !!o.correct);
-      return { answer: chosen.join('; ') || '(no answer)', correct: right.join('; '), ok };
+      return { answer: chosen.join('; ') || '(no answer)', correct: right.join('; '), ok, picked: opts.filter((o) => selected.has(o.i)).map((o) => o.i) };
     },
   };
 }

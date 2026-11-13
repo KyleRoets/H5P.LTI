@@ -36,6 +36,9 @@ export const config = {
   demo,
   dataDir: path.resolve(process.env.DATA_DIR || './data'),
   toolName: process.env.TOOL_NAME || 'ReachStudio',
+  // ReachQuizzes: the tool's name in ReachLMS, and the short label in the course menu.
+  quizToolName: process.env.QUIZ_TOOL_NAME || 'ReachQuizzes',
+  quizNavLabel: process.env.QUIZ_NAV_LABEL || 'Quizzes+',
   // Comma-separated emails that get the Admin view (manage all users). See also `npm run make-admin`.
   adminEmails: (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
   // How long a studio/player session token stays valid.

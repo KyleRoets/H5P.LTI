@@ -59,7 +59,7 @@ export default {
   },
 
   render(data, ctx) {
-    const base = (data.questions || []).filter((q) => q.options?.some((o) => o.correct) && (plain(q.text) || q.image));
+    const base = (data.questions || []).filter((q) => (q._secure || q.options?.some((o) => o.correct)) && (plain(q.text) || q.image));
     if (!base.length) return emptyState('type-quiz', 'Write a question and tick its correct answer to get started.');
     const root = h('div', { class: 'rs-quiz' });
     let order; let idx; let results;
@@ -67,6 +67,13 @@ export default {
     const draw = () => {
       root.replaceChildren();
       const bar = h('div', { class: 'rs-progress', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': order.length, 'aria-valuenow': idx }, h('div', { style: { width: `${(idx / order.length) * 100}%` } }));
+      if (idx >= order.length && order.some((q) => q._secure)) {
+        // Exam mode: the page doesn't know the answers, so there is no score to show here.
+        root.append(bar, h('div', { class: 'rs-result rs-done-note' }, h('div', { class: 'result-badge pass' }, icon('check', { size: 28 })),
+          h('p', {}, `All ${order.length} questions answered. Press Submit to hand in your answers.`)));
+        ctx.report?.(0, order.length);
+        return;
+      }
       if (idx >= order.length) {
         const score = results.filter(Boolean).length;
         const pct = Math.round((score / order.length) * 100);
@@ -86,7 +93,7 @@ export default {
       const check = h('button', { class: 'btn primary rs-accent-btn', type: 'button', onclick: () => {
         const ok = cq.check(); if (ok === null) return;
         results[idx] = ok; check.remove(); next.classList.remove('hidden');
-        ctx.record?.({ key: `q${base.indexOf(q)}`, question: htmlToText(q.text) || `Question ${idx + 1}`, ...cq.describe() });
+        ctx.record?.({ key: `q${(data.questions || []).indexOf(q)}`, question: htmlToText(q.text) || `Question ${idx + 1}`, ...cq.describe() });
         fb.append(feedback(ok, isBlank(q.feedbackCorrect) ? 'Correct!' : q.feedbackCorrect, isBlank(q.feedbackWrong) ? 'Not quite — the correct answer is highlighted.' : q.feedbackWrong));
         next.focus();
       } }, icon('check', { size: 16 }), h('span', {}, checkLabel()));

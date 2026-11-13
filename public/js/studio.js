@@ -4,6 +4,7 @@ import { icon } from './icons.js';
 import { logo } from './brand.js';
 import { coverSvg } from './covers.js';
 import { TYPES, TYPE_LIST, CATEGORIES, renderContent } from './types/index.js';
+import { responsesTable, snapshotFrame, fmtWhen } from './submission.js';
 
 const BOOT = window.BOOT || {};
 const store = {
@@ -45,8 +46,11 @@ async function boot() {
   if (!state.me.user) return renderAuth(state.me.recoverable ? 'login' : 'signup');
   if (state.me.user.status !== 'active') return renderSuspended();
   await loadLibrary();
+  // Opened from the ReachQuizzes course menu item: start on the course's quizzes.
+  if (quizzesMode() && !location.hash) { location.hash = '#quizzes'; return; }
   route();
 }
+const quizzesMode = () => state.me?.lti?.kind === 'quizzes';
 
 async function loadLibrary() {
   try {
@@ -64,6 +68,9 @@ function route() {
   if (view === 'new') return renderGallery();
   if (view === 'edit' && arg) return openEditor(arg);
   if (view === 'admin' && isAdmin()) return renderAdmin();
+  if (view === 'quizzes' && quizzesMode()) return renderQuizzes();
+  // Opened from Quizzes+: home is the course's quizzes ("My content" links to #library).
+  if (!view && quizzesMode()) return renderQuizzes();
   return renderLibrary();
 }
 const go = (hash) => { if (location.hash === hash) route(); else location.hash = hash; };
@@ -79,7 +86,8 @@ function topbar(active = '') {
   return h('header', { class: 'topbar' },
     h('a', { class: 'brand', href: '#', 'aria-label': 'ReachStudio home' }, logo({ variant: 'white' })),
     u && h('nav', { class: 'tabs-nav', 'aria-label': 'Sections' },
-      h('a', { href: '#', class: active === 'library' ? 'on' : '' }, icon('library', { size: 16 }), h('span', {}, 'My content')),
+      quizzesMode() && h('a', { href: '#quizzes', class: active === 'quizzes' ? 'on' : '' }, icon('type-quiz', { size: 16 }), h('span', {}, 'Course quizzes')),
+      h('a', { href: quizzesMode() ? '#library' : '#', class: active === 'library' ? 'on' : '' }, icon('library', { size: 16 }), h('span', {}, 'My content')),
       isAdmin() && h('a', { href: '#admin', class: active === 'admin' ? 'on' : '' }, icon('shield', { size: 16 }), h('span', {}, 'Admin'))),
     h('div', { class: 'spacer' }),
     l?.context && h('span', { class: 'ctx' }, icon('book', { size: 14 }), l.context),
@@ -568,6 +576,10 @@ function renderBuilder(doc) {
       titleInput, folderSel, h('span', { class: 'undo-group' }, undoBtn, redoBtn), dirtyEl,
       h('button', { class: `btn ${canEmbed ? '' : 'primary'}`, type: 'button', onclick: async () => { if (await save()) toast('Saved'); } }, icon('save', { size: 16 }), h('span', {}, 'Save')),
       canEmbed && h('button', { class: 'btn primary', type: 'button', onclick: async () => { const s = await save(); if (s) embed(s.id); } }, icon('insert', { size: 16 }), h('span', {}, 'Save & insert')),
+      quizzesMode() && state.quizCreate && h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+        const s = await save(); if (!s) return;
+        try { await api.post('/api/quizzes', { contentId: s.id }); state.quizCreate = false; toast('Added to the course quizzes'); go('#quizzes'); } catch (e) { toast(e.message, 'error'); }
+      } }, icon('plus', { size: 16 }), h('span', {}, 'Save & add to course')),
       paneToggle),
     builderEl = h('div', { class: 'builder mode-edit' },
       editorPane,
@@ -584,6 +596,89 @@ function renderBuilder(doc) {
     if (k === 's') { e.preventDefault(); save().then((s) => s && toast('Saved')); }
   };
   if (!doc.title) titleInput.focus();
+}
+
+// ---------------- ReachQuizzes: the course's quizzes (teacher view) ----------------
+const fmtDue = (d) => (d ? new Date(d).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+async function renderQuizzes() {
+  app.replaceChildren(topbar('quizzes'), h('div', { class: 'loading' }, 'Loading course quizzes…'));
+  let r;
+  try { r = await api.get('/api/quizzes'); } catch (e) { app.replaceChildren(topbar('quizzes'), h('div', { class: 'empty' }, h('h3', {}, 'Could not load quizzes'), h('p', {}, e.message))); return; }
+  const refresh = () => renderQuizzes();
+  let hintHidden = false; try { hintHidden = localStorage.getItem('rq-nav-hint') === '1'; } catch { /* ignore */ }
+  const hint = !hintHidden && h('div', { class: 'note rq-hint' }, icon('info', { size: 16 }),
+    h('span', {}, 'Students find published quizzes under ', h('strong', {}, r.label), ' in the course menu, and under Assignments. To use only these quizzes in this course, hide ReachLMS\'s own ', h('strong', {}, 'Quizzes'), ' in ', h('strong', {}, 'Settings → Navigation'), '.'),
+    iconBtn('x', 'Hide this tip', (e) => { try { localStorage.setItem('rq-nav-hint', '1'); } catch { /* ignore */ } e.currentTarget.closest('.rq-hint').remove(); }));
+
+  const addQuiz = async () => {
+    const graded = state.contents.filter((c) => TYPES[c.type]);
+    let picked = null;
+    const list = h('div', { class: 'rq-pick' }, graded.length ? graded.map((c) => {
+      const t = TYPES[c.type];
+      const b = h('button', { type: 'button', class: 'rq-pick-item', onclick: () => { list.querySelectorAll('.on').forEach((x) => x.classList.remove('on')); b.classList.add('on'); picked = c.id; } },
+        h('span', { class: 'ticon', style: { background: t.color } }, icon(t.icon, { size: 15 })), h('span', { class: 'grow' }, h('strong', {}, c.title), h('small', {}, `${t.name}${t.graded ? '' : ' · graded by you'}`)));
+      return b;
+    }) : h('p', { class: 'help' }, 'Your library is empty. Create a quiz first.'));
+    const create = h('button', { class: 'btn', type: 'button', onclick: () => { document.querySelector('.modal-back')?.remove(); state.quizCreate = true; go('#new/quiz'); } }, icon('plus', { size: 15 }), h('span', {}, 'Create a new quiz'));
+    const other = h('button', { class: 'btn ghost', type: 'button', onclick: () => { document.querySelector('.modal-back')?.remove(); state.quizCreate = true; go('#new'); } }, h('span', {}, 'or another activity type…'));
+    const ok = await modal({ title: 'Add a quiz to this course', wide: true, confirm: 'Add to course',
+      body: h('div', {}, h('p', { class: 'help' }, 'Pick any item from your library. It is added as a draft; publish it when you are ready and it appears for students.'), h('div', { class: 'rq-create' }, create, other), list) });
+    if (!ok) return;
+    if (!picked) { toast('Pick an item first', 'error'); return; }
+    try { await api.post('/api/quizzes', { contentId: picked }); toast('Added as a draft'); refresh(); } catch (e) { toast(e.message, 'error'); }
+  };
+  const publish = async (q) => {
+    if (!q.published && !await modal({ title: `Publish "${q.title}"?`, body: `This creates a ${q.points}-point assignment in ReachLMS (gradebook column, Assignments page and SpeedGrader). Set its due and availability dates on that assignment in ReachLMS. Students can then take it from ${r.label}.`, confirm: 'Publish' })) return;
+    try { await api.post(`/api/quizzes/${q.id}/publish`); toast(q.published ? 'Name and points updated in ReachLMS' : 'Published — the assignment is in ReachLMS'); refresh(); } catch (e) { toast(e.message, 'error'); }
+  };
+  const remove = async (q) => {
+    const body = q.published ? `This also deletes its assignment in ReachLMS, with any grades in that column. Attempts stay in ReachStudio. This can't be undone.` : 'It is only a draft, so nothing in ReachLMS changes. The item stays in your library.';
+    if (!await modal({ title: `Remove "${q.title}" from this course?`, body, confirm: 'Remove', danger: q.published })) return;
+    try { await api.del(`/api/quizzes/${q.id}`); toast('Removed'); refresh(); } catch (e) { toast(e.message, 'error'); }
+  };
+  const open = async (q) => {
+    try { const { url } = await api.post(`/api/quizzes/${q.id}/open`); location.assign(url); } catch (e) { toast(e.message, 'error'); }
+  };
+  const results = async (q) => {
+    let res;
+    try { res = await api.get(`/api/quizzes/${q.id}/results`); } catch (e) { toast(e.message, 'error'); return; }
+    const view = async (id) => {
+      const d = await api.get(`/api/submissions/${id}`); const sub = d.submission;
+      document.querySelectorAll('.modal-back').forEach((m) => m.remove());
+      await modal({ title: `${sub.name || 'Student'} — attempt ${sub.attempt}`, wide: true, confirm: null, cancel: 'Close',
+        body: h('div', { class: 'sub-view' }, h('p', { class: 'sub-line' }, sub.mode === 'manual' ? 'Graded by you in SpeedGrader.' : `Score ${sub.score} / ${sub.max}`, ' · ', fmtWhen(sub.at)), responsesTable(sub.responses) || '', snapshotFrame(sub.snapshot, window.BOOT?.build || '')) });
+    };
+    await modal({ title: `Results — ${q.title}`, wide: true, confirm: null, cancel: 'Close', body: res.students.length
+      ? h('table', { class: 'results' }, h('thead', {}, h('tr', {}, ['Student', 'Attempts', 'Latest', 'Submitted', ''].map((x) => h('th', {}, x)))),
+        h('tbody', {}, res.students.map((st) => { const last = st.attempts.at(-1); return h('tr', {}, h('td', {}, st.name), h('td', { class: 'num' }, String(st.attempts.length)),
+          h('td', {}, last.mode === 'manual' ? h('span', { class: 'pill pending' }, 'Needs grading') : `${last.score} / ${last.max}`), h('td', {}, fmtWhen(last.at)),
+          h('td', {}, h('button', { class: 'btn sm', type: 'button', onclick: () => view(last.id) }, icon('eye', { size: 14 }), h('span', {}, 'View')))); })))
+      : h('p', { class: 'help' }, 'No submissions yet.') });
+  };
+
+  const row = (q) => h('article', { class: `rq-row ${q.published ? '' : 'draft'}` },
+    h('span', { class: 'ticon', style: { background: TYPES[q.type]?.color || '#888' } }, icon(TYPES[q.type]?.icon || 'help', { size: 16 })),
+    h('div', { class: 'rq-main' },
+      h('h4', {}, q.title, ' ', h('span', { class: `pill ${q.published ? 'active' : 'pending'}` }, q.published ? 'Published' : 'Draft')),
+      h('p', { class: 'rq-meta' }, ...[`${q.points} pts`, q.mode === 'manual' ? 'graded by you' : 'auto-marked', q.attempts ? `${q.attempts} attempt${q.attempts === 1 ? '' : 's'}` : 'unlimited attempts',
+        q.start && `opens ${fmtDue(q.start)}`, q.end && `due ${fmtDue(q.end)}`, q.published && `${q.students} student${q.students === 1 ? '' : 's'} submitted`].filter(Boolean).map((x, i) => h('span', {}, i ? ` · ${x}` : x))),
+      q.missing && h('p', { class: 'error' }, 'The activity behind this quiz was deleted.')),
+    h('div', { class: 'rq-actions' },
+      h('button', { class: `btn sm ${q.published ? '' : 'primary'}`, type: 'button', disabled: q.missing, onclick: () => publish(q) }, icon(q.published ? 'restore' : 'send', { size: 14 }), h('span', {}, q.published ? 'Update in ReachLMS' : 'Publish')),
+      h('button', { class: 'btn sm', type: 'button', disabled: q.missing, onclick: () => open(q) }, icon('eye', { size: 14 }), h('span', {}, 'Preview')),
+      q.published && h('button', { class: 'btn sm', type: 'button', onclick: () => results(q) }, icon('users', { size: 14 }), h('span', {}, 'Results')),
+      moreMenu(q.title, [
+        ...(q.owner ? [['edit', 'Edit the activity', () => go(`#edit/${q.contentId}`)]] : []),
+        ['trash', 'Remove from course', () => remove(q), 'danger'],
+      ])));
+
+  app.replaceChildren(topbar('quizzes'), h('section', { class: 'main rq' },
+    h('div', { class: 'main-head' }, h('h2', {}, `${r.label} — ${r.course || 'this course'}`), h('button', { class: 'btn primary', type: 'button', onclick: addQuiz }, icon('plus', { size: 16 }), h('span', {}, 'Add a quiz'))),
+    hint || '',
+    !r.canPublish && h('p', { class: 'warn' }, icon('alert', { size: 16 }), h('span', {}, 'ReachLMS did not give ReachQuizzes permission to create assignments in this course, so quizzes can\'t be published. Ask your administrator to check the ReachQuizzes developer key.')),
+    r.quizzes.length ? h('div', { class: 'rq-list' }, r.quizzes.map(row))
+      : h('div', { class: 'empty' }, icon('type-quiz', { size: 34 }), h('h3', {}, 'No quizzes in this course yet'), h('p', {}, 'Add one from your library, or create a new quiz. Any ReachStudio activity can be a quiz: drag and drop, hotspots, ordering, video questions and more.'),
+        h('button', { class: 'btn primary', type: 'button', onclick: addQuiz }, icon('plus', { size: 16 }), h('span', {}, 'Add a quiz')))));
 }
 
 // ---------------- grading settings (used when the item is an assignment) ----------------

@@ -11,6 +11,7 @@ import { createSession, getSession, setSessionUser, deleteSession, tokenFrom, re
 import { buildDeepLinkResponse, postScore } from './lti.js';
 import { TYPES, isType, gradingFor } from './types.js';
 import { userUsage, quotaBytes, resetUsageCache } from './storage.js';
+import { isSecure, markSecure } from './secure.js';
 import { views } from './views.js';
 
 export const apiRouter = express.Router();
@@ -36,7 +37,8 @@ function linkIdentity(session, userId) {
 
 /** The ReachLMS identity behind this session, if any: { user_id, active }. */
 const sessionIdentity = (session) => (session?.lti?.platformId && session.lti.sub
-  ? db.prepare('SELECT user_id, active FROM lti_identities WHERE platform_id = ? AND sub = ?').get(session.lti.platformId, session.lti.sub)
+  ? db.prepare(`SELECT i.user_id, i.active FROM lti_identities i JOIN platforms p ON p.id = i.platform_id
+      WHERE p.issuer = (SELECT issuer FROM platforms WHERE id = ?) AND i.sub = ? ORDER BY i.active DESC, (i.platform_id = ?) DESC LIMIT 1`).get(session.lti.platformId, session.lti.sub, session.lti.platformId)
   : null);
 
 /** True when ReachLMS has just vouched for this user (their linked identity launched this session). */
@@ -128,7 +130,7 @@ apiRouter.post('/api/auth/logout', requireSession, (req, res) => {
   if (req.session.lti?.platformId) {
     // Stop this ReachLMS identity signing in automatically. The link is kept (inactive) so the
     // person can still prove who they are from ReachLMS if they forget their password.
-    db.prepare('UPDATE lti_identities SET active = 0 WHERE platform_id = ? AND sub = ?').run(req.session.lti.platformId, req.session.lti.sub);
+    db.prepare('UPDATE lti_identities SET active = 0 WHERE sub = ? AND platform_id IN (SELECT id FROM platforms WHERE issuer = (SELECT issuer FROM platforms WHERE id = ?))').run(req.session.lti.sub, req.session.lti.platformId);
     setSessionUser(req.session.token, null);
   } else {
     deleteSession(req.session.token);
@@ -409,7 +411,13 @@ apiRouter.post('/api/score', requireSession, async (req, res) => {
   if (!c) return res.status(404).json({ error: 'Content not found.' });
   const grading = gradingFor(c.type, JSON.parse(c.data));
   const raw = Number(req.body?.score);
-  const autoScore = grading.autoMax > 0 && Number.isFinite(raw) ? Math.max(0, Math.min(grading.autoMax, raw)) : null;
+  let autoScore = grading.autoMax > 0 && Number.isFinite(raw) ? Math.max(0, Math.min(grading.autoMax, raw)) : null;
+  // Exam mode: the page never had the answer key, so the server marks the student's choices.
+  let secureResponses = null;
+  if (lti.ags && isSecure(c.type, grading)) {
+    const m = markSecure(JSON.parse(c.data), req.body?.responses);
+    autoScore = m.score; secureResponses = m.responses;
+  }
 
   if (!lti.ags) { // not an assignment: keep the old lightweight statistics only
     if (grading.autoMax > 0) {
@@ -432,7 +440,7 @@ apiRouter.post('/api/score', requireSession, async (req, res) => {
   if (score !== null && grading.keep === 'best' && before.best !== null) sent = Math.max(score, before.best);
   db.prepare(`INSERT INTO submissions (id, content_id, platform_id, context_id, resource_link_id, lineitem, sub, user_name, attempt, mode, score, auto_score, max_score, sent_score, snapshot, responses, passback)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')`)
-    .run(id, c.id, lti.platformId, lti.contextId, linkKey(lti), lti.ags.lineitem, lti.sub, lti.name || '', attempt, grading.mode, score, autoScore, grading.max, sent, cleanSnapshot(req.body?.snapshot), cleanResponses(req.body?.responses));
+    .run(id, c.id, lti.platformId, lti.contextId, linkKey(lti), lti.ags.lineitem, lti.sub, lti.name || '', attempt, grading.mode, score, autoScore, grading.max, sent, cleanSnapshot(req.body?.snapshot), cleanResponses(secureResponses || req.body?.responses));
 
   let passback = 'sent';
   try {
@@ -468,6 +476,11 @@ function canSeeSubmission(session, sub) {
     if (!issuer(sub.platform_id) || issuer(sub.platform_id) !== issuer(l.platformId)) return false;
   }
   if (l.kind === 'review') return l.reviewSub === sub.sub && l.reviewLink === sub.resource_link_id;
+  // ReachQuizzes teacher page: any quiz in this course.
+  if (l.kind === 'quizzes' && l.instructor && String(sub.resource_link_id).startsWith('quiz:')) {
+    const q = db.prepare('SELECT context_id FROM course_quizzes WHERE id = ?').get(sub.resource_link_id.slice(5));
+    return !!q && q.context_id === l.contextId;
+  }
   if (l.kind === 'player' && l.teacherAssignment) return sub.resource_link_id === linkKey(l);
   if (l.kind === 'player' && l.ags) return sub.sub === l.sub && sub.resource_link_id === linkKey(l);
   return false;

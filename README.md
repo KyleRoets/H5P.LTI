@@ -214,6 +214,37 @@ Then open <http://localhost:4000>:
 2. Use the RCE's **ReachStudio** button to create an account, build something and **Save & insert**.
 3. Add a graded assignment, then switch to **Student** to complete it and watch the gradebook update.
 
+## ReachQuizzes: quizzes in the course menu
+
+ReachQuizzes adds a **Quizzes+** item to the course menu. It runs from the same ReachStudio server, with the same accounts, library and storage, but it is installed as a **second registration**: Canvas allows each tool only one course-menu link, and ReachStudio's link is already the teachers' library.
+
+**Install:** ReachLMS → Admin → Developer Keys → **+ Dynamic Registration**, then paste `https://<your-studio>/lti/register?app=quizzes`. The manual alternative is the JSON at `/lti/quizzes-config.json`. Install ReachStudio too, because teachers build quizzes in their ReachStudio library.
+
+**Switching it on in a course:** it is **off in every course** until a teacher turns it on:
+1. Open **Settings → Navigation** in the course.
+2. Drag **Quizzes+** into the visible list.
+3. To use only these quizzes, drag ReachLMS's own **Quizzes** into the hidden list.
+4. Click **Save**.
+
+**What teachers do** (Quizzes+ → *Course quizzes*):
+- **Add a quiz:** pick any item from the library, or create a new one. It is added as a draft, which students don't see.
+- **Publish:** ReachQuizzes creates the assignment in ReachLMS through the gradebook API (AGS line items). That gives it a gradebook column, an entry on the Assignments page and SpeedGrader. Set its due and availability dates on that assignment in ReachLMS, as usual.
+- **Update in ReachLMS:** sends the current title and points to the assignment.
+- **Also on each quiz:**
+  - **Preview** the quiz.
+  - **Results:** each student's attempts, answers and work.
+  - **Edit** the activity.
+  - **Remove** it from the course. Removing a published quiz deletes its assignment.
+- **Grading:** the Grading tab settings (attempts, best or latest score, what students see) apply as they do for assignments.
+
+**What students see:**
+- **The quiz list:** Open, Submitted, Upcoming and Closed quizzes (from the assignment's dates), with attempts left and their score when the quiz shows it.
+- **Taking a quiz:** they take it inside the course, from Quizzes+ or from the assignment. Attempts count the same either way.
+
+**Exam mode:** for Quiz items, when *Show whether each answer is right or wrong* is off, students' browsers never receive the answer key. The student's choices are sent back and marked on the server, and SpeedGrader shows each answer with the correct one.
+
+**Where it's going next:** question banks with random draws, time limits, access codes, one question per page, extra time or attempts per student, per-question statistics and regrading.
+
 ## Media storage: where files live
 
 Uploaded images, audio, captions and videos are stored on the **ReachStudio server**, in `DATA_DIR/media`. On Render that is the persistent disk mounted at `/data`.

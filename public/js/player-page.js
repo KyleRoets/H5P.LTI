@@ -175,6 +175,8 @@ async function viewSubmission(id) {
   });
 }
 
+// Opened from the ReachQuizzes list in this frame: a way back to the list.
+if (BOOT.back) root.append(h('button', { class: 'btn sm ghost rq-back', type: 'button', onclick: () => location.assign(BOOT.back) }, icon('arrow-left', { size: 14 }), h('span', {}, 'All quizzes')));
 if (G && BOOT.teacher) teacherAssignment();
 else if (G && BOOT.graded && !BOOT.preview) studentAssignment();
 else plainPlayer();

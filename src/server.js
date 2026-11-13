@@ -7,6 +7,7 @@ import { loadKeys } from './keys.js';
 import { ltiRouter } from './lti.js';
 import { apiRouter, mediaStatic } from './api.js';
 import { adminRouter } from './admin.js';
+import { quizzesRouter } from './quizzes.js';
 import { views } from './views.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -44,6 +45,7 @@ export async function createApp() {
   }
   app.use(ltiRouter);
   app.use(adminRouter);
+  app.use(quizzesRouter);
   app.use(apiRouter);
   app.get('/health', (req, res) => res.json({ ok: true }));
   app.get('/', (req, res) => res.send(views.message(config.toolName,

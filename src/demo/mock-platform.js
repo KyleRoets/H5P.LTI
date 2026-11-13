@@ -3,7 +3,7 @@
 // client_credentials token endpoint and AGS score endpoint, plus a course page to click through.
 // Used by DEMO_MODE (mounted at /demo on the tool itself) and by test/mock-canvas.js.
 import express from 'express';
-import { generateKeyPair, exportJWK, SignJWT, jwtVerify, createRemoteJWKSet } from 'jose';
+import { generateKeyPair, exportJWK, SignJWT, jwtVerify, createRemoteJWKSet, decodeJwt } from 'jose';
 import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,7 +30,8 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
   const pubJwk = { ...(await exportJWK(publicKey)), kid, alg: 'RS256', use: 'sig' };
   const state = {
     regToken: crypto.randomBytes(12).toString('hex'),
-    registration: null, // { client_id, payload }
+    registration: null, // ReachStudio { client_id, payload }
+    quizRegistration: null, // ReachQuizzes (second registration from the same tool)
     deploymentId: 'deployment-1',
     page: [], // embedded content items in the course page (RCE)
     assignments: [], // { id, title, lineItem, item, scores: {}, submissions: { [userId]: [...] } }
@@ -38,6 +39,7 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
     log: [],
   };
   const log = (m) => { state.log.push(m); };
+  const regByClient = (id) => [state.registration, state.quizRegistration].find((r) => r && r.client_id === String(id));
 
   const app = express();
   app.use(express.urlencoded({ extended: false }));
@@ -70,16 +72,18 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
     for (const k of ['initiate_login_uri', 'redirect_uris', 'jwks_uri', 'https://purl.imsglobal.org/spec/lti-tool-configuration']) {
       if (!p[k]) return res.status(422).json({ error: `missing ${k}` });
     }
-    state.registration = { client_id: '10000000000042', payload: p };
-    log('registered tool');
-    res.json({ ...p, client_id: state.registration.client_id, 'https://purl.imsglobal.org/spec/lti-tool-configuration': { ...p['https://purl.imsglobal.org/spec/lti-tool-configuration'], deployment_id: state.deploymentId } });
+    const quizzes = p['https://purl.imsglobal.org/spec/lti-tool-configuration']['https://canvas.instructure.com/lti/tool_id'] === 'reach-quizzes';
+    const reg = { client_id: quizzes ? '10000000000043' : '10000000000042', payload: p };
+    if (quizzes) state.quizRegistration = reg; else state.registration = reg;
+    log(`registered ${quizzes ? 'ReachQuizzes' : 'ReachStudio'}`);
+    res.json({ ...p, client_id: reg.client_id, 'https://purl.imsglobal.org/spec/lti-tool-configuration': { ...p['https://purl.imsglobal.org/spec/lti-tool-configuration'], deployment_id: state.deploymentId } });
   });
 
   // OIDC authorization: the tool redirects the browser here, we answer with an auto-posting form.
   app.get('/api/lti/authorize_redirect', async (req, res) => {
     const q = req.query;
-    const reg = state.registration;
-    if (!reg || q.client_id !== reg.client_id) return res.status(400).send('unknown client_id');
+    const reg = regByClient(q.client_id);
+    if (!reg) return res.status(400).send('unknown client_id');
     if (!reg.payload.redirect_uris.includes(q.redirect_uri)) return res.status(400).send('redirect_uri not registered');
     const user = USERS[q.login_hint];
     if (!user) return res.status(400).send('bad login_hint');
@@ -128,6 +132,15 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
         };
       }
       }
+    } else if (kind === 'qnav') { // ReachQuizzes course menu item (everyone in the course)
+      claims['https://purl.imsglobal.org/spec/lti/claim/message_type'] = 'LtiResourceLinkRequest';
+      claims['https://purl.imsglobal.org/spec/lti/claim/resource_link'] = { id: 'rl-qnav' };
+      claims['https://purl.imsglobal.org/spec/lti/claim/target_link_uri'] = `${toolUrl}/lti/launch?app=quizzes&placement=course_navigation`;
+      claims['https://www.instructure.com/placement'] = 'course_navigation';
+      claims['https://purl.imsglobal.org/spec/lti-ags/claim/endpoint'] = {
+        scope: ['https://purl.imsglobal.org/spec/lti-ags/scope/lineitem', 'https://purl.imsglobal.org/spec/lti-ags/scope/score', 'https://purl.imsglobal.org/spec/lti-ags/scope/result.readonly'],
+        lineitems: `${base}/api/lti/courses/1/line_items`,
+      };
     } else if (kind === 'nav') {
       claims['https://purl.imsglobal.org/spec/lti/claim/message_type'] = 'LtiResourceLinkRequest';
       claims['https://purl.imsglobal.org/spec/lti/claim/resource_link'] = { id: 'rl-nav' };
@@ -168,7 +181,8 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
   // OAuth2 client_credentials with private_key_jwt.
   app.post('/login/oauth2/token', async (req, res) => {
     try {
-      const reg = state.registration;
+      const reg = regByClient(decodeJwt(req.body.client_assertion).iss);
+      if (!reg) throw new Error('unknown client');
       if (req.body.grant_type !== 'client_credentials') throw new Error('bad grant_type');
       const jwks = createRemoteJWKSet(new URL(resolve(reg.payload.jwks_uri)));
       await jwtVerify(req.body.client_assertion, jwks, { issuer: reg.client_id, subject: reg.client_id, audience: `${base}/login/oauth2/token` });
@@ -178,11 +192,47 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
     } catch (e) { res.status(400).json({ error: 'invalid_client', error_description: e.message }); }
   });
 
+  const authed = (req) => state.issuedTokens.has((req.get('authorization') || '').replace('Bearer ', ''));
+  const lineItemOut = (a) => ({ id: `${base}/api/lti/courses/1/line_items/${a.id}`, label: a.title, scoreMaximum: a.lineItem?.scoreMaximum, resourceId: a.lineItem?.resourceId, tag: a.lineItem?.tag, startDateTime: a.start || undefined, endDateTime: a.end || undefined });
+  // Like Canvas: a line item created by the tool with the submission_type extension becomes an
+  // External Tool assignment that launches the given URL.
+  app.post('/api/lti/courses/1/line_items', express.json({ type: () => true }), (req, res) => {
+    if (!authed(req)) return res.status(401).json({ error: 'unauthorized' });
+    const b = req.body || {};
+    const ext = b['https://canvas.instructure.com/lti/submission_type'] || {};
+    if (!b.label || !(b.scoreMaximum >= 0)) return res.status(400).json({ error: 'label and scoreMaximum are required' });
+    const a = { id: state.assignments.length, title: b.label, lineItem: { scoreMaximum: b.scoreMaximum, label: b.label, resourceId: b.resourceId, tag: b.tag }, item: { url: ext.external_tool_url, custom: {} }, scores: {}, submissions: {}, app: 'quizzes' };
+    state.assignments.push(a);
+    log(`tool created assignment "${a.title}" (${b.scoreMaximum} pts)`);
+    res.json(lineItemOut(a));
+  });
+  app.get('/api/lti/courses/1/line_items/:id', (req, res) => {
+    if (!authed(req)) return res.status(401).json({ error: 'unauthorized' });
+    const a = state.assignments[Number(req.params.id)];
+    if (!a || a.deleted) return res.status(404).json({ error: 'no line item' });
+    res.json(lineItemOut(a));
+  });
+  app.put('/api/lti/courses/1/line_items/:id', express.json({ type: () => true }), (req, res) => {
+    if (!authed(req)) return res.status(401).json({ error: 'unauthorized' });
+    const a = state.assignments[Number(req.params.id)];
+    if (!a || a.deleted) return res.status(404).json({ error: 'no line item' });
+    if (req.body.label) a.title = req.body.label;
+    if (req.body.scoreMaximum >= 0) a.lineItem = { ...a.lineItem, scoreMaximum: req.body.scoreMaximum, label: a.title };
+    res.json(lineItemOut(a));
+  });
+  app.delete('/api/lti/courses/1/line_items/:id', (req, res) => {
+    if (!authed(req)) return res.status(401).json({ error: 'unauthorized' });
+    const a = state.assignments[Number(req.params.id)];
+    if (!a || a.deleted) return res.status(404).json({ error: 'no line item' });
+    a.deleted = true; log(`tool deleted assignment "${a.title}"`);
+    res.status(204).end();
+  });
+
   app.post('/api/lti/courses/1/line_items/:id/scores', (req, res) => {
     const tok = (req.get('authorization') || '').replace('Bearer ', '');
     if (!state.issuedTokens.has(tok)) return res.status(401).json({ error: 'unauthorized' });
     const a = state.assignments[Number(req.params.id)];
-    if (!a) return res.status(404).json({ error: 'no line item' });
+    if (!a || a.deleted) return res.status(404).json({ error: 'no line item' });
     const b = req.body;
     // Like Canvas: PendingManual/FullyGraded without scoreGiven clears the score unless preserve_score.
     const ext = b['https://canvas.instructure.com/lti/submission'] || {};
@@ -196,24 +246,27 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
     res.json({ resultUrl: `${base}/results/1` });
   });
 
-  app.get('/state', (req, res) => res.json({ registered: !!state.registration, page: state.page, assignments: state.assignments, log: state.log }));
+  app.get('/state', (req, res) => res.json({ registered: !!state.registration, quizzesRegistered: !!state.quizRegistration, page: state.page, assignments: state.assignments, log: state.log }));
 
   // A simple "course page" UI to click through the whole flow in a browser.
   app.get('/', (req, res) => {
     const role = req.query.as === 'student' ? 'student' : 'teacher';
     const reg = state.registration;
-    const loginUrl = (hint) => `${toolUrl}/lti/login?${new URLSearchParams({ iss: base, login_hint: role, client_id: reg?.client_id || '', lti_deployment_id: state.deploymentId, target_link_uri: `${toolUrl}/lti/launch`, lti_message_hint: hint })}`;
+    const qreg = state.quizRegistration;
+    const loginUrl = (hint, r = reg) => `${toolUrl}/lti/login?${new URLSearchParams({ iss: base, login_hint: role, client_id: r?.client_id || '', lti_deployment_id: state.deploymentId, target_link_uri: `${toolUrl}/lti/launch`, lti_message_hint: hint })}`;
     const regUrl = `${toolUrl}/lti/register?${new URLSearchParams({ openid_configuration: `${base}/api/lti/security/openid-configuration`, registration_token: state.regToken })}`;
+    const qregUrl = `${toolUrl}/lti/register?${new URLSearchParams({ app: 'quizzes', openid_configuration: `${base}/api/lti/security/openid-configuration`, registration_token: state.regToken })}`;
+    const navLabel = qreg?.payload['https://purl.imsglobal.org/spec/lti-tool-configuration']?.messages?.[0]?.label || 'Quizzes+';
     const pageEmbeds = state.page.map((item, i) => `<iframe class="embed" title="${esc(item.title)}" src="${esc(loginUrl(`rl:page-${i}`))}" style="width:100%;max-width:${item.iframe?.width || 800}px;height:${item.iframe?.height || 500}px"></iframe>`).join('');
     const names = Object.fromEntries(Object.values(USERS).map((u) => [u.sub, u.name]));
-    const assignments = state.assignments.map((a, i) => `<li><strong>${esc(a.title)}</strong> (${a.lineItem ? `${a.lineItem.scoreMaximum} pts` : 'ungraded'})
-        — <button onclick="openModal('${esc(loginUrl(`rl:assign-${i}`))}')">Open</button>
+    const assignments = state.assignments.map((a, i) => (a.deleted ? '' : `<li><strong>${esc(a.title)}</strong> (${a.lineItem ? `${a.lineItem.scoreMaximum} pts` : 'ungraded'})${a.app === 'quizzes' ? ' <span class="muted">· created by ReachQuizzes</span>' : ''}
+        — <button onclick="openModal('${esc(loginUrl(`rl:assign-${i}`, a.app === 'quizzes' ? qreg : reg))}')">Open</button>
         ${role === 'teacher' ? Object.entries(a.submissions || {}).map(([uid, subs]) => {
           const s = a.scores[uid] || {}; const needs = subs.at(-1)?.gradingProgress === 'PendingManual';
           return `<div class="sg">SpeedGrader · ${esc(names[uid] || uid)}: ${subs.length} submission${subs.length === 1 ? '' : 's'} ·
             ${needs ? '<span class="needs">Needs grading</span>' : `<span class="score">${s.scoreGiven ?? '–'}/${s.scoreMaximum}</span>`}
             <button class="sgbtn" onclick="openModal('${esc(loginUrl(`rl:sg-${i}.${uid}`))}')">Open in SpeedGrader</button></div>`;
-        }).join('') : Object.values(a.scores).map((s) => `<span class="score">Gradebook: ${s.scoreGiven ?? 'pending'}/${s.scoreMaximum}</span>`).join('')}</li>`).join('');
+        }).join('') : Object.values(a.scores).map((s) => `<span class="score">Gradebook: ${s.scoreGiven ?? 'pending'}/${s.scoreMaximum}</span>`).join('')}</li>`)).join('');
     res.send(`<!doctype html><html><head><meta charset="utf-8"><title>ReachLMS demo course</title><style>
       body{font-family:system-ui,sans-serif;margin:0;background:#f5f5f5;color:#2d3b45}
       header{background:#fff;color:#193B82;padding:10px 20px;display:flex;gap:16px;align-items:center;border-bottom:3px solid #278DDF}
@@ -241,6 +294,9 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
         <button id="new-assignment-type" class="navbtn" onclick="openModal('${esc(loginUrl('dl:submission_type_selection'))}')">+ Assignment → Submission type: ReachStudio</button></p>` : ''}
       <ul>${assignments || '<li class="muted">None</li>'}</ul>
       ${role === 'teacher' && reg ? `<p><button class="navbtn" onclick="openModal('${esc(loginUrl('nav:course'))}')">Course navigation: ReachStudio</button></p>` : ''}
+      <h2>Course menu: ${esc(navLabel)}</h2>
+      ${qreg ? `<p><button id="qnav" class="navbtn" onclick="openModal('${esc(loginUrl('qnav:course', qreg))}')">${esc(navLabel)}</button> <span class="muted">(ReachQuizzes, client ID ${esc(qreg.client_id)})</span></p>`
+        : role === 'teacher' ? `<p><button id="install-quizzes" onclick="openModal('${esc(qregUrl)}')">Install ReachQuizzes (Dynamic Registration)</button></p>` : '<p class="muted">Not installed.</p>'}
       </main>
       <div id="modal"><div class="box"><div class="bar"><span>ReachStudio</span><button onclick="closeModal()">✕</button></div><iframe id="modal-frame" title="Tool"></iframe></div></div>
       <script>
