@@ -39,6 +39,12 @@ export const config = {
   // ReachQuizzes: the tool's name in ReachLMS, and the short label in the course menu.
   quizToolName: process.env.QUIZ_TOOL_NAME || 'ReachQuizzes',
   quizNavLabel: process.env.QUIZ_NAV_LABEL || 'Quizzes+',
+  // Canvas REST API access for ReachQuizzes (assignment groups, descriptions, Assign To, publish):
+  // an API Developer Key from ReachLMS → Admin → Developer Keys → + API Key.
+  canvasClientId: process.env.CANVAS_API_CLIENT_ID || (demo ? 'mock-api-key' : ''),
+  canvasClientSecret: process.env.CANVAS_API_CLIENT_SECRET || (demo ? 'mock-api-secret' : ''),
+  // Optional: ReachLMS's web address if it differs from what launches report.
+  canvasApiBase: process.env.CANVAS_API_BASE || '',
   // Comma-separated emails that get the Admin view (manage all users). See also `npm run make-admin`.
   adminEmails: (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
   // How long a studio/player session token stays valid.

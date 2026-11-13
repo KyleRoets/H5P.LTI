@@ -1,6 +1,8 @@
 // Server-side knowledge of each content type: default embed size and maximum score
 // (used to create a graded ReachLMS assignment via the AGS lineItem).
 
+import { totalPoints } from './rqquiz.js';
+
 // Answers are <mark> elements in rich text (older content used *asterisks* in plain text).
 const marks = (d) => (d.html !== undefined
   ? (String(d.html).match(/<mark[\s>]/gi) || []).length
@@ -40,6 +42,8 @@ export const TYPES = {
   chart:        { embedSize: { width: 800, height: 520 }, maxScore: () => 0 },
   guess:        { embedSize: { width: 720, height: 520 }, maxScore: () => 0 },
   videoplayer:  { embedSize: { width: 800, height: 540 }, maxScore: () => 0 },
+  // ReachQuizzes course quiz (several questions with points); not in the ReachStudio gallery.
+  rqquiz:       { embedSize: { width: 900, height: 700 }, maxScore: (d) => totalPoints(d), hidden: true },
 };
 
 /** Embed iframe size: the author's chosen width, height scaled from the type default. */

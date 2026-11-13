@@ -214,36 +214,63 @@ Then open <http://localhost:4000>:
 2. Use the RCE's **ReachStudio** button to create an account, build something and **Save & insert**.
 3. Add a graded assignment, then switch to **Student** to complete it and watch the gradebook update.
 
-## ReachQuizzes: quizzes in the course menu
+## ReachQuizzes: course quizzes (Quizzes+)
 
-ReachQuizzes adds a **Quizzes+** item to the course menu. It runs from the same ReachStudio server, with the same accounts, library and storage, but it is installed as a **second registration**: Canvas allows each tool only one course-menu link, and ReachStudio's link is already the teachers' library.
+ReachQuizzes adds a **Quizzes+** item to the course menu. It is a quiz tool that works like ReachLMS's own Quizzes, with ReachStudio's question types.
 
-**Install:** ReachLMS → Admin → Developer Keys → **+ Dynamic Registration**, then paste `https://<your-studio>/lti/register?app=quizzes`. The manual alternative is the JSON at `/lti/quizzes-config.json`. Install ReachStudio too, because teachers build quizzes in their ReachStudio library.
+It runs on the same ReachStudio server, with the same storage. It is installed as a **second registration**, because Canvas allows each tool only one course-menu link. It is off in every course until a teacher switches it on in **Settings → Navigation**, where they can also hide ReachLMS's own Quizzes.
 
-**Switching it on in a course:** it is **off in every course** until a teacher turns it on:
-1. Open **Settings → Navigation** in the course.
-2. Drag **Quizzes+** into the visible list.
-3. To use only these quizzes, drag ReachLMS's own **Quizzes** into the hidden list.
-4. Click **Save**.
+**No separate login:**
+- A teacher's account is created from their ReachLMS identity the first time they open Quizzes+.
+- Quizzes belong to the course: any teacher of the course can edit them.
+- The first time, each teacher clicks **Authorize** once, so Quizzes+ can manage the course's assignments in ReachLMS.
 
-**What teachers do** (Quizzes+ → *Course quizzes*):
-- **Add a quiz:** pick any item from the library, or create a new one. It is added as a draft, which students don't see.
-- **Publish:** ReachQuizzes creates the assignment in ReachLMS through the gradebook API (AGS line items). That gives it a gradebook column, an entry on the Assignments page and SpeedGrader. Set its due and availability dates on that assignment in ReachLMS, as usual.
-- **Update in ReachLMS:** sends the current title and points to the assignment.
-- **Also on each quiz:**
-  - **Preview** the quiz.
-  - **Results:** each student's attempts, answers and work.
-  - **Edit** the activity.
-  - **Remove** it from the course. Removing a published quiz deletes its assignment.
-- **Grading:** the Grading tab settings (attempts, best or latest score, what students see) apply as they do for assignments.
+**Every quiz is a real ReachLMS assignment.** LTI alone can't set an assignment group, description, Assign To or publish state, so Quizzes+ uses the Canvas REST API, acting as the teacher who is signed in. Creating or saving a quiz sets:
+- the **assignment group** (weights stay in ReachLMS)
+- the **description**
+- **points** (the total of the question points)
+- **Display grade as**
+- **due and availability dates**
+- **Assign To**: everyone, sections, or individual students, each with their own dates
+- **published or unpublished**
 
-**What students see:**
-- **The quiz list:** Open, Submitted, Upcoming and Closed quizzes (from the assignment's dates), with attempts left and their score when the quiz shows it.
-- **Taking a quiz:** they take it inside the course, from Quizzes+ or from the assignment. Attempts count the same either way.
+Gradebook weighting, SpeedGrader, the Assignments page, the calendar and modules all work as they do for any assignment. ReachLMS enforces the availability dates.
 
-**Exam mode:** for Quiz items, when *Show whether each answer is right or wrong* is off, students' browsers never receive the answer key. The student's choices are sent back and marked on the server, and SpeedGrader shows each answer with the correct one.
+**Question types:**
+- multiple choice
+- multiple answer (with partial credit)
+- true/false
+- numeric (with a margin)
+- fill in the blanks
+- drag the words
+- categorization
+- drag and drop on an image
+- matching
+- ordering
+- hot spot
+- mark the words
+- pick the true statement
+- essay (graded in SpeedGrader)
 
-**Where it's going next:** question banks with random draws, time limits, access codes, one question per page, extra time or attempts per student, per-question statistics and regrading.
+Each question has its own points. Interactive questions can give **partial credit** (a share of the points for each part right) or be all-or-nothing.
+
+**Settings:**
+- attempts allowed, and highest or latest score
+- shuffle question order
+- what students see after submitting: their score, right or wrong, the correct answers
+
+**Taking a quiz:**
+- **Where:** students open a quiz from Quizzes+ or the Assignments page, and take it on the assignment page in ReachLMS.
+- **Layout:** all questions on one page. Marking is never shown while answering. Submit at the top or the bottom asks for confirmation in place.
+- **Marking:** choice and numeric answers are marked on the server, and their answer keys are never sent to the browser. Interactive questions report how much is right, and the server turns that into points.
+- **Grade:** the attempt goes to SpeedGrader with an answers table showing each question, the student's answer, the correct answer and the points. Quizzes with essays are sent with the automatic part scored and marked "needs grading".
+
+**Setup:** an admin creates an **API Developer Key** in ReachLMS and puts its ID and key on the server (`CANVAS_API_CLIENT_ID`, `CANVAS_API_CLIENT_SECRET`). See the setup guide, Part 3.4.
+
+**Next stages:**
+1. Question banks with random draws per student, and shared passages.
+2. Time limits with automatic submission, access codes, one question per page with no going back, and results release dates.
+3. Moderate (extra time or attempts per student), per-question statistics and regrading.
 
 ## Media storage: where files live
 

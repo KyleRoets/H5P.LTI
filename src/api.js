@@ -12,6 +12,7 @@ import { buildDeepLinkResponse, postScore } from './lti.js';
 import { TYPES, isType, gradingFor } from './types.js';
 import { userUsage, quotaBytes, resetUsageCache } from './storage.js';
 import { isSecure, markSecure } from './secure.js';
+import { markQuiz } from './rqquiz.js';
 import { views } from './views.js';
 
 export const apiRouter = express.Router();
@@ -231,7 +232,8 @@ const out = (c, full = false) => ({
 });
 
 apiRouter.get('/api/contents', requireUser, (req, res) => {
-  const where = ['user_id = ?'];
+  // Course quizzes (ReachQuizzes) live in their course, not in the personal library.
+  const where = ['user_id = ?', "type != 'rqquiz'"];
   const args = [req.session.userId];
   if (req.query.folder === 'none') where.push('folder_id IS NULL');
   else if (req.query.folder) { where.push('folder_id = ?'); args.push(req.query.folder); }
@@ -413,8 +415,12 @@ apiRouter.post('/api/score', requireSession, async (req, res) => {
   const raw = Number(req.body?.score);
   let autoScore = grading.autoMax > 0 && Number.isFinite(raw) ? Math.max(0, Math.min(grading.autoMax, raw)) : null;
   // Exam mode: the page never had the answer key, so the server marks the student's choices.
-  let secureResponses = null;
-  if (lti.ags && isSecure(c.type, grading)) {
+  let secureResponses = null; let review = false;
+  if (lti.ags && c.type === 'rqquiz') {
+    // Course quizzes are always marked here (choice and numeric answers never reach the page).
+    const m = markQuiz(JSON.parse(c.data), req.body?.responses);
+    autoScore = m.score; secureResponses = m.responses; review = m.review;
+  } else if (lti.ags && isSecure(c.type, grading)) {
     const m = markSecure(JSON.parse(c.data), req.body?.responses);
     autoScore = m.score; secureResponses = m.responses;
   }
@@ -446,7 +452,7 @@ apiRouter.post('/api/score', requireSession, async (req, res) => {
   try {
     const platform = db.prepare('SELECT * FROM platforms WHERE id = ?').get(lti.platformId);
     await postScore(platform, lti.ags.lineitem, {
-      sub: lti.sub, scoreGiven: sent, scoreMaximum: grading.max, mode: grading.mode,
+      sub: lti.sub, scoreGiven: sent, scoreMaximum: grading.max, mode: grading.mode, review,
       reviewUrl: `${config.publicUrl}/lti/launch?review=${id}`,
     });
   } catch (e) {
@@ -504,6 +510,7 @@ apiRouter.get('/api/submissions/:id', requireSession, (req, res) => {
     const full = db.prepare('SELECT type, data FROM contents WHERE id = ?').get(x.content_id);
     const g = full ? gradingFor(full.type, JSON.parse(full.data)) : { showScore: true, showFeedback: true };
     if (!g.showFeedback) submission.responses = submission.responses.map((r) => ({ ...r, correct: '', ok: null }));
+    else if (full?.type === 'rqquiz' && !g.showAnswers) submission.responses = submission.responses.map((r) => ({ ...r, correct: '' }));
     if (!g.showScore) { submission = forStudent(submission, g); attempts = attempts.map((a) => forStudent(a, g)); }
   }
   res.json({ submission, content: c && { id: c.id, type: c.type, title: c.title }, attempts });

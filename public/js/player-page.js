@@ -40,7 +40,10 @@ async function studentAssignment() {
   // Lecturer chose to hide marking: activities still mark answers (for the score and SpeedGrader)
   // but students don't see right/wrong — they answer, move on and submit.
   const hideMarks = G.mode === 'auto' && !G.showFeedback;
-  if (hideMarks) document.body.classList.add('rs-hide-feedback', 'rs-no-reveal');
+  // Course quizzes (ReachQuizzes) never show marking while they're being answered.
+  const isQuiz = BOOT.content.type === 'rqquiz';
+  if (hideMarks || isQuiz) document.body.classList.add('rs-hide-feedback', 'rs-no-reveal');
+  const beforeSubmit = [];
   const bar = h('div', { class: 'assign-bar' });
   const stage = h('div', { class: 'assign-stage' });
   root.append(bar, stage);
@@ -54,7 +57,10 @@ async function studentAssignment() {
   const attemptsText = () => (G.attempts ? `Attempt ${Math.min(info.used + 1, G.attempts)} of ${G.attempts}` : (info.used ? `Attempt ${info.used + 1}` : 'Unlimited attempts'));
   const countedText = () => (G.showScore && info.counted !== null && info.counted !== undefined ? `Score in the gradebook: ${info.counted} / ${G.max}` : '');
 
-  const submitBtn = h('button', { class: 'btn primary', type: 'button', onclick: () => submit() }, icon('send', { size: 15 }), h('span', {}, 'Submit'));
+  const submitBtn = h('button', { class: 'btn primary', type: 'button', onclick: (e) => submit(e.currentTarget) }, icon('send', { size: 15 }), h('span', {}, 'Submit'));
+  // A second Submit under the activity, for long quizzes.
+  const bottom = h('div', { class: 'assign-bottom' }, h('span', { class: 'assign-hint' }, 'Finished? Check your answers, then submit.'),
+    h('button', { class: 'btn primary', type: 'button', onclick: (e) => submit(e.currentTarget) }, icon('send', { size: 15 }), h('span', {}, 'Submit')));
   const hint = h('span', { class: 'assign-hint' });
   const drawBar = (mode) => {
     bar.replaceChildren(...[
@@ -64,6 +70,7 @@ async function studentAssignment() {
       submitBtn.disabled = false;
       hint.textContent = G.mode === 'manual'
         ? 'When you have finished, press Submit to hand in your work.'
+        : isQuiz ? 'Answer the questions, then press Submit.'
         : hideMarks ? (latest ? 'All done? Press Submit to hand in your answers.' : 'Answer the questions, then press Submit.')
           : latest ? `Your score: ${latest.score} / ${latest.max}. Press Submit to hand it in.` : 'Complete the activity and press Check, then Submit.';
     }
@@ -72,12 +79,14 @@ async function studentAssignment() {
   const startAttempt = () => {
     latest = null;
     records = new Map();
+    beforeSubmit.length = 0;
     contentEl = renderContent(BOOT.content.type, BOOT.content.data, {
       grading: G,
       report: (score, max) => { latest = { score, max }; drawBar('working'); },
       record: (r) => { if (r?.key) records.set(String(r.key), r); },
+      onBeforeSubmit: (fn) => beforeSubmit.push(fn),
     });
-    stage.replaceChildren(contentEl);
+    stage.replaceChildren(contentEl, bottom);
     drawBar('working');
   };
 
@@ -92,7 +101,8 @@ async function studentAssignment() {
         : h('p', {}, icon('check', { size: 16 }), h('span', {}, `Submitted ${justNow ? 'just now' : fmtWhen(sub.at)} — you scored ${sub.score} / ${sub.max}.${sub.sent !== null && sub.sent !== undefined && sub.sent !== sub.score ? ` Your best score (${sub.sent}) counts.` : ''}`));
     const failed = sub.passback === 'failed' && h('p', { class: 'warn' }, icon('alert', { size: 16 }), h('span', {}, 'Your work was saved, but ReachLMS could not be updated. Please tell your lecturer.'));
     const again = left > 0 && h('button', { class: 'btn primary', type: 'button', onclick: startAttempt }, icon('restore', { size: 15 }), h('span', {}, G.attempts ? `Start attempt ${info.used + 1} of ${G.attempts}` : 'Start a new attempt'));
-    const card = h('div', { class: 'assign-done' }, status, failed, h('p', { class: 'muted' }, left === Infinity ? '' : left > 0 ? `${left} attempt${left === 1 ? '' : 's'} left.` : 'You have used all your attempts.'), again);
+    const essays = isQuiz && (BOOT.content.data.questions || []).some((x) => x.kind === 'essay');
+    const card = h('div', { class: 'assign-done' }, status, failed, essays && h('p', { class: 'muted' }, 'Written answers are graded by your teacher, so your final score may go up.'), h('p', { class: 'muted' }, left === Infinity ? '' : left > 0 ? `${left} attempt${left === 1 ? '' : 's'} left.` : 'You have used all your attempts.'), again);
     stage.replaceChildren(card, h('div', { class: 'assign-snap' }, h('h4', {}, 'Your submitted work'), h('div', { class: 'loading-sm' }, 'Loading…')));
     try {
       const full = await api.get(`/api/submissions/${sub.id}`);
@@ -103,19 +113,31 @@ async function studentAssignment() {
     } catch { stage.querySelector('.assign-snap')?.remove(); }
   };
 
-  async function submit() {
+  // Confirmation shown in place (next to the button that was pressed). ReachLMS stretches this
+  // frame to the full height of the activity, so a centred pop-up could be off-screen.
+  const confirmInline = (host, text) => new Promise((resolve) => {
+    const saved = [...host.childNodes];
+    const done = (v) => { host.replaceChildren(...saved); host.classList.remove('confirming'); resolve(v); };
+    host.classList.add('confirming');
+    host.replaceChildren(h('span', { class: 'assign-confirm' }, icon('send', { size: 15 }), text),
+      h('button', { class: 'btn', type: 'button', onclick: () => done(false) }, 'Cancel'),
+      h('button', { class: 'btn primary', type: 'button', onclick: () => done(true) }, icon('check', { size: 15 }), h('span', {}, 'Yes, submit')));
+    host.querySelector('.btn.primary').focus();
+  });
+
+  async function submit(from) {
     const last = G.attempts && info.used + 1 >= G.attempts;
-    const what = G.mode !== 'auto' ? 'Your lecturer will see exactly what you did and grade it.'
+    const what = isQuiz ? 'Your answers will be marked and sent to your teacher. You can\'t change them after submitting.'
+      : G.mode !== 'auto' ? 'Your lecturer will see exactly what you did and grade it.'
       : hideMarks ? (latest ? 'Your answers will be marked and sent to your lecturer.' : 'You haven\'t finished yet — unanswered questions score 0.')
       : latest ? `Your score of ${latest.score} / ${latest.max} will be sent to the gradebook.`
         : 'You haven\'t pressed Check yet, so this attempt will score 0.';
-    const ok = await modal({
-      title: 'Submit your work?',
-      body: `${what}${last ? ' This is your last attempt.' : ''}`,
-      confirm: 'Submit',
-    });
+    const host = from?.closest?.('.assign-actions, .assign-bottom') || bar.querySelector('.assign-actions');
+    const ok = host ? await confirmInline(host, `${what}${last ? ' This is your last attempt.' : ''}`)
+      : await modal({ title: 'Submit your work?', body: `${what}${last ? ' This is your last attempt.' : ''}`, confirm: 'Submit' });
     if (!ok) return;
     submitBtn.disabled = true;
+    for (const fn of beforeSubmit) { try { fn(); } catch (e) { console.error(e); } }
     try {
       const r = await api.post('/api/score', { score: G.mode === 'auto' ? (latest?.score ?? 0) : null, snapshot: takeSnapshot(contentEl), responses: [...records.values()] });
       info = r;

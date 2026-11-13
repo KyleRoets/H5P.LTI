@@ -28,6 +28,7 @@ import collage from './collage.js';
 import chart from './chart.js';
 import guess from './guess.js';
 import videoplayer from './videoplayer.js';
+import rqquiz from './rqquiz.js';
 import { h, applyStyle } from '../util.js';
 import { TYPE_COLORS } from '../covers.js';
 
@@ -54,6 +55,9 @@ export const TYPE_LIST = [
 ];
 TYPE_LIST.forEach((t) => { t.color = TYPE_COLORS[t.id]; t.category ||= LEGACY_CATEGORY[t.id] || 'media'; });
 export const TYPES = Object.fromEntries(TYPE_LIST.map((t) => [t.id, t]));
+// Course quizzes (ReachQuizzes) play like any item but are not in the gallery.
+rqquiz.color = '#193B82';
+TYPES.rqquiz = rqquiz;
 
 /** Renders a content item with its appearance settings applied. */
 export function renderContent(type, data, ctx = {}) {

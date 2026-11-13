@@ -1,7 +1,7 @@
-// ReachQuizzes for students: the course's published quizzes, opened in this frame.
-import { h, makeApi, toast } from './util.js';
+// Quizzes+ for students: the course's published quizzes, grouped like ReachLMS's Quizzes page.
+// Each quiz opens on its assignment page in ReachLMS (which applies the availability dates).
+import { h, makeApi } from './util.js';
 import { icon } from './icons.js';
-import { TYPES } from './types/index.js';
 
 const BOOT = window.BOOT;
 const api = makeApi(() => BOOT.token);
@@ -12,34 +12,31 @@ async function load() {
   let r;
   try { r = await api.get('/api/quizzes'); } catch (e) { root.replaceChildren(h('div', { class: 'rs-empty' }, icon('alert', { size: 28 }), h('p', {}, e.message))); return; }
   const now = Date.now();
-  const state = (q) => {
-    if (q.start && Date.parse(q.start) > now) return { key: 'soon', label: `Opens ${when(q.start)}`, open: false };
-    if (q.end && Date.parse(q.end) < now) return { key: 'closed', label: `Closed ${when(q.end)}`, open: false };
-    if (q.attempts && q.used >= q.attempts) return { key: 'done', label: 'Submitted', open: true, action: 'View' };
-    if (q.used) return { key: 'done', label: 'Submitted', open: true, action: q.attempts ? `Try again (${q.attempts - q.used} left)` : 'Try again' };
-    return { key: 'open', label: q.end ? `Due ${when(q.end)}` : 'Open', open: true, action: 'Start' };
+  const status = (q) => {
+    if (q.unlock && Date.parse(q.unlock) > now) return { key: 'soon', text: `Not available until ${when(q.unlock)}` };
+    if (q.lock && Date.parse(q.lock) < now) return { key: 'closed', text: `Closed ${when(q.lock)}` };
+    if (q.used) return { key: 'done', text: q.score !== null && q.score !== undefined ? `Submitted · ${q.score} / ${q.points} pts` : 'Submitted' };
+    return { key: 'open', text: q.lock ? `Available until ${when(q.lock)}` : 'Available' };
   };
-  const card = (q) => {
-    const t = TYPES[q.type] || { icon: 'type-quiz', color: '#888', name: 'Quiz' };
-    const s = state(q);
-    return h('article', { class: `rq-card ${s.key}` },
-      h('span', { class: 'ticon', style: { background: t.color } }, icon(t.icon, { size: 18 })),
-      h('div', { class: 'rq-main' },
-        h('h3', {}, q.title),
-        h('p', { class: 'rq-meta' }, `${q.points} pts · ${q.attempts ? `${q.attempts} attempt${q.attempts === 1 ? '' : 's'}` : 'unlimited attempts'}${q.mode === 'manual' ? ' · graded by your teacher' : ''}`),
-        h('p', { class: `rq-state ${s.key}` }, s.label, q.used > 0 && q.score !== null && q.score !== undefined ? ` · score ${q.score} / ${q.points}` : '', q.used > 0 && q.lastAt ? ` · last submitted ${when(`${q.lastAt.replace(' ', 'T')}Z`)}` : '')),
-      s.open && h('button', { class: `btn ${s.key === 'open' ? 'primary' : ''}`, type: 'button', onclick: async () => {
-        try { const { url } = await api.post(`/api/quizzes/${q.id}/open`); location.assign(url); } catch (e) { toast(e.message, 'error'); }
-      } }, h('span', {}, s.action), icon('chevron-right', { size: 15 })));
+  const item = (q) => {
+    const s = status(q);
+    const title = q.url ? h('a', { href: q.url, target: '_top', class: 'rq-item-title' }, q.title) : h('span', { class: 'rq-item-title' }, q.title);
+    return h('div', { class: `rq-item student ${s.key}` },
+      h('span', { class: 'rq-item-ico' }, icon('type-quiz', { size: 18 })),
+      h('div', { class: 'rq-item-main' }, title,
+        h('div', { class: 'rq-item-meta' }, h('span', { class: `rq-state ${s.key}` }, s.text),
+          q.due && h('span', {}, h('strong', {}, 'Due'), ` ${when(q.due)}`), h('span', {}, `${q.points} pts`), h('span', {}, `${q.questions} Question${q.questions === 1 ? '' : 's'}`),
+          q.attempts > 0 && h('span', {}, `${Math.max(0, q.attempts - q.used)} of ${q.attempts} attempt${q.attempts === 1 ? '' : 's'} left`))),
+      q.url && s.key !== 'soon' && s.key !== 'closed' && h('a', { class: `btn sm ${s.key === 'open' ? 'primary' : ''}`, href: q.url, target: '_top' }, s.key === 'done' ? 'View' : 'Start', icon('chevron-right', { size: 14 })));
   };
-  const groups = [['Open', r.quizzes.filter((q) => ['open'].includes(state(q).key))], ['Submitted', r.quizzes.filter((q) => state(q).key === 'done')], ['Upcoming', r.quizzes.filter((q) => state(q).key === 'soon')], ['Closed', r.quizzes.filter((q) => state(q).key === 'closed')]].filter(([, l]) => l.length);
+  const groups = new Map();
+  r.quizzes.forEach((q) => { if (!groups.has(q.group)) groups.set(q.group, []); groups.get(q.group).push(q); });
   root.replaceChildren(
     h('header', { class: 'rq-head' }, h('h1', {}, r.label), r.course && h('span', { class: 'rq-course' }, r.course)),
-    ...(groups.length ? groups.map(([name, list]) => h('section', { class: 'rq-group' }, h('h2', {}, name), list.map(card)))
+    ...(groups.size ? [...groups].map(([name, list]) => h('section', { class: 'rq-group-block' }, h('header', {}, h('span', {}, icon('chevron-down', { size: 16 }), name)), list.map(item)))
       : [h('div', { class: 'rs-empty' }, icon('type-quiz', { size: 30 }), h('p', {}, 'There are no quizzes in this course yet.'))]));
 }
 load();
-// Coming back from a quiz (browser history) shows the page from cache: refresh the status.
 window.addEventListener('pageshow', (e) => { if (e.persisted) load(); });
 
 let lastH = 0;

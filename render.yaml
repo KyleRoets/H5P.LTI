@@ -17,6 +17,10 @@ services:
         value: "true"
       - key: DATA_DIR
         value: /data
+      - key: CANVAS_API_CLIENT_ID      # ReachQuizzes: ID of the ReachLMS API Developer Key
+        sync: false
+      - key: CANVAS_API_CLIENT_SECRET  # ReachQuizzes: that key's secret
+        sync: false
       - key: ADMIN_EMAILS        # your email, so you get the Admin view
         sync: false
       - key: REGISTRATION_CODE   # admins type this when installing into ReachLMS

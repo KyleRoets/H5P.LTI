@@ -155,8 +155,12 @@ const QUIZ_SCOPES = [
   'https://purl.imsglobal.org/spec/lti-ags/scope/score',
   'https://purl.imsglobal.org/spec/lti-ags/scope/result.readonly',
 ];
+// Canvas fills these in on every launch: which course and user, and ReachLMS's own address, so
+// ReachQuizzes can manage the course's assignments through the REST API.
+const QUIZ_CUSTOM = { canvas_course_id: '$Canvas.course.id', canvas_user_id: '$Canvas.user.id', canvas_api_baseurl: '$Canvas.api.baseUrl' };
 function quizMessages() {
   return [{
+    custom_parameters: QUIZ_CUSTOM,
     type: 'LtiResourceLinkRequest',
     target_link_uri: url('/lti/launch?app=quizzes&placement=course_navigation'),
     label: config.quizNavLabel,
@@ -217,6 +221,7 @@ export function canvasQuizJsonConfig() {
     target_link_uri: url('/lti/launch?app=quizzes'),
     public_jwk_url: url('/.well-known/jwks.json'),
     scopes: QUIZ_SCOPES,
+    custom_fields: QUIZ_CUSTOM,
     extensions: [{
       platform: 'canvas.instructure.com',
       domain: new URL(config.publicUrl).host,
@@ -297,16 +302,19 @@ export async function getAccessToken(platform, scopes) {
  *         submission shows as "needs grading" (a grade the lecturer already gave is kept).
  * reviewUrl is stored as a basic_lti_launch submission: SpeedGrader launches it to show the attempt.
  */
-export async function postScore(platform, lineitem, { sub, scoreGiven, scoreMaximum, mode = 'auto', reviewUrl, submittedAt = new Date() }) {
+export async function postScore(platform, lineitem, { sub, scoreGiven, scoreMaximum, mode = 'auto', review = false, reviewUrl, submittedAt = new Date() }) {
   const token = await getAccessToken(platform, ['https://purl.imsglobal.org/spec/lti-ags/scope/score']);
   const u = new URL(lineitem);
   u.pathname = u.pathname.replace(/\/$/, '') + '/scores';
   const manual = mode === 'manual';
+  // review: part marked automatically (score sent) and part by the lecturer (e.g. a quiz with an
+  // essay) — the score is filled in and SpeedGrader still shows "needs grading".
+  const pending = manual || review;
   const body = {
     userId: sub,
     scoreMaximum,
-    activityProgress: manual ? 'Submitted' : 'Completed',
-    gradingProgress: manual ? 'PendingManual' : 'FullyGraded',
+    activityProgress: pending ? 'Submitted' : 'Completed',
+    gradingProgress: pending ? 'PendingManual' : 'FullyGraded',
     timestamp: new Date().toISOString(),
     'https://canvas.instructure.com/lti/submission': {
       new_submission: true,

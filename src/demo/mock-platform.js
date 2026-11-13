@@ -12,11 +12,11 @@ const LOGO = path.join(path.dirname(fileURLToPath(import.meta.url)), 'reachlms-l
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const USERS = {
-  teacher: { sub: 'user-teacher-1', name: 'Taylor Teacher', given_name: 'Taylor', family_name: 'Teacher', email: 'taylor@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'] },
-  guest: { sub: 'user-guest-1', name: 'Gale Guest', given_name: 'Gale', family_name: 'Guest', email: 'gale@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'] },
-  admin: { sub: 'user-admin-1', name: 'Alex Admin', given_name: 'Alex', family_name: 'Admin', email: 'alex@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/institution/person#Administrator', 'http://purl.imsglobal.org/vocab/lis/v2/system/person#User'] },
-  student2: { sub: 'user-student-2', name: 'Robin Student', given_name: 'Robin', family_name: 'Student', email: 'robin@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Learner'] },
-  student: { sub: 'user-student-1', name: 'Sam Student', given_name: 'Sam', family_name: 'Student', email: 'sam@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Learner'] },
+  teacher: { canvasId: '101', sub: 'user-teacher-1', name: 'Taylor Teacher', given_name: 'Taylor', family_name: 'Teacher', email: 'taylor@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'] },
+  guest: { canvasId: '102', sub: 'user-guest-1', name: 'Gale Guest', given_name: 'Gale', family_name: 'Guest', email: 'gale@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'] },
+  admin: { canvasId: '103', sub: 'user-admin-1', name: 'Alex Admin', given_name: 'Alex', family_name: 'Admin', email: 'alex@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/institution/person#Administrator', 'http://purl.imsglobal.org/vocab/lis/v2/system/person#User'] },
+  student2: { canvasId: '202', sub: 'user-student-2', name: 'Robin Student', given_name: 'Robin', family_name: 'Student', email: 'robin@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Learner'] },
+  student: { canvasId: '201', sub: 'user-student-1', name: 'Sam Student', given_name: 'Sam', family_name: 'Student', email: 'sam@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Learner'] },
 };
 
 /**
@@ -44,6 +44,7 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
   const app = express();
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json({ type: ['application/json', 'application/vnd.ims.lis.v1.score+json'] }));
+  app.use((req, res, next) => { if (req.query.as && USERS[req.query.as] && req.method === 'GET' && !req.path.startsWith('/login')) state.lastRole = req.query.as; next(); });
 
   app.get('/logo.jpg', (req, res) => res.sendFile(LOGO));
 
@@ -147,6 +148,9 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
       claims['https://purl.imsglobal.org/spec/lti/claim/target_link_uri'] = `${toolUrl}/lti/launch?placement=course_navigation`;
       claims['https://www.instructure.com/placement'] = 'course_navigation';
     } else return res.status(400).send('bad lti_message_hint');
+    // Like Canvas with the variables ReachQuizzes asks for ($Canvas.course.id, $Canvas.user.id, $Canvas.api.baseUrl).
+    const CUSTOM = 'https://purl.imsglobal.org/spec/lti/claim/custom';
+    claims[CUSTOM] = { ...(claims[CUSTOM] || {}), canvas_course_id: '1', canvas_user_id: user.canvasId, canvas_api_baseurl: base };
     const idToken = await new SignJWT(claims).setProtectedHeader({ alg: 'RS256', kid, typ: 'JWT' })
       .setIssuer(base).setAudience(reg.client_id).setSubject(user.sub).setIssuedAt().setExpirationTime('5m').sign(privateKey);
     log(`launch ${kind}:${arg} as ${q.login_hint}`);
@@ -179,7 +183,72 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
   });
 
   // OAuth2 client_credentials with private_key_jwt.
+  // ---- Canvas REST API with OAuth2 (API Developer Key) — used by ReachQuizzes ----
+  state.apiCodes = new Map(); state.apiTokens = new Map(); state.refresh = new Map();
+  state.groups = [{ id: 11, name: 'Assignments', group_weight: 40, position: 1 }, { id: 12, name: 'Quizzes', group_weight: 60, position: 2 }];
+  state.sections = [{ id: 21, name: 'Section A' }, { id: 22, name: 'Section B' }];
+  state.overrides = [];
+  const API_KEY = { id: 'mock-api-key', secret: 'mock-api-secret' };
+  // Authorize screen: approves straight away as the user viewing the course (?as=… for tests).
+  app.get('/login/oauth2/auth', (req, res) => {
+    if (req.query.client_id !== API_KEY.id) return res.status(400).send('unknown API key');
+    const who = USERS[req.query.as] ? req.query.as : (state.lastRole || 'teacher');
+    const code = crypto.randomBytes(8).toString('hex');
+    state.apiCodes.set(code, who);
+    const u = new URL(req.query.redirect_uri); u.searchParams.set('code', code); u.searchParams.set('state', req.query.state);
+    log(`API authorize as ${who}`);
+    res.redirect(u.toString());
+  });
+  const apiUser = (req) => USERS[state.apiTokens.get((req.get('authorization') || '').replace('Bearer ', ''))];
+  const teacherOnly = (req, res) => { const u = apiUser(req); if (!u) { res.status(401).json({ errors: [{ message: 'Invalid access token.' }] }); return null; } if (!u.roles.some((r) => /Instructor|Administrator/.test(r))) { res.status(403).json({ errors: [{ message: 'user not authorized to perform that action' }] }); return null; } return u; };
+  const restOut = (a) => ({ id: a.id, name: a.title, description: a.rest.description, points_possible: a.lineItem.scoreMaximum, grading_type: a.rest.grading_type, assignment_group_id: a.rest.assignment_group_id,
+    published: !!a.rest.published, due_at: a.rest.due_at || null, unlock_at: a.rest.unlock_at || null, lock_at: a.rest.lock_at || null, only_visible_to_overrides: !!a.rest.only_visible_to_overrides, submission_types: ['external_tool'], external_tool_tag_attributes: { url: a.item.url } });
+  app.get('/api/v1/courses/1', (req, res) => (apiUser(req) ? res.json({ id: 1, name: 'Biology 101', apply_assignment_group_weights: true }) : res.status(401).end()));
+  app.get('/api/v1/courses/1/assignment_groups', (req, res) => (apiUser(req) ? res.json(state.groups) : res.status(401).end()));
+  app.get('/api/v1/courses/1/sections', (req, res) => (apiUser(req) ? res.json(state.sections) : res.status(401).end()));
+  app.get('/api/v1/courses/1/users', (req, res) => (apiUser(req) ? res.json(Object.values(USERS).filter((u) => u.roles.some((r) => r.endsWith('#Learner'))).map((u) => ({ id: Number(u.canvasId), name: u.name, sortable_name: `${u.family_name}, ${u.given_name}` }))) : res.status(401).end()));
+  app.get('/api/v1/courses/1/assignments', (req, res) => (apiUser(req) ? res.json(state.assignments.filter((a) => a.rest && !a.deleted).map(restOut)) : res.status(401).end()));
+  const applyRest = (a, b = {}) => {
+    if (b.name !== undefined) a.title = b.name;
+    if (b.points_possible !== undefined) a.lineItem = { ...a.lineItem, scoreMaximum: Number(b.points_possible) || 0, label: a.title };
+    if (b.external_tool_tag_attributes?.url) a.item = { ...a.item, url: b.external_tool_tag_attributes.url };
+    for (const k of ['description', 'grading_type', 'assignment_group_id', 'published', 'due_at', 'unlock_at', 'lock_at', 'only_visible_to_overrides']) if (b[k] !== undefined) a.rest[k] = b[k];
+  };
+  app.post('/api/v1/courses/1/assignments', (req, res) => {
+    if (!teacherOnly(req, res)) return;
+    const b = req.body.assignment || {};
+    if (!(b.submission_types || []).includes('external_tool') || !b.external_tool_tag_attributes?.url) return res.status(400).json({ errors: { submission_types: 'external tool url required' } });
+    const a = { id: state.assignments.length, title: b.name || 'Untitled', lineItem: { scoreMaximum: 0, label: b.name }, item: { url: '', custom: {} }, scores: {}, submissions: {}, app: 'quizzes', rest: { published: false, assignment_group_id: state.groups[0].id, grading_type: 'points' } };
+    applyRest(a, b); a.lineItem.label = a.title;
+    state.assignments.push(a);
+    log(`REST created assignment "${a.title}"`);
+    res.json(restOut(a));
+  });
+  const findA = (req, res) => { const a = state.assignments[Number(req.params.id)]; if (!a || a.deleted || !a.rest) { res.status(404).json({ errors: [{ message: 'The specified resource does not exist.' }] }); return null; } return a; };
+  app.put('/api/v1/courses/1/assignments/:id', (req, res) => { if (!teacherOnly(req, res)) return; const a = findA(req, res); if (!a) return; applyRest(a, req.body.assignment || {}); res.json(restOut(a)); });
+  app.delete('/api/v1/courses/1/assignments/:id', (req, res) => { if (!teacherOnly(req, res)) return; const a = findA(req, res); if (!a) return; a.deleted = true; log(`REST deleted assignment "${a.title}"`); res.json(restOut(a)); });
+  app.get('/api/v1/courses/1/assignments/:id/overrides', (req, res) => (apiUser(req) ? res.json(state.overrides.filter((o) => o.assignment_id === Number(req.params.id) && !o.deleted)) : res.status(401).end()));
+  app.post('/api/v1/courses/1/assignments/:id/overrides', (req, res) => {
+    if (!teacherOnly(req, res)) return; if (!findA(req, res)) return;
+    const o = { id: 900 + state.overrides.length, assignment_id: Number(req.params.id), ...(req.body.assignment_override || {}) };
+    state.overrides.push(o); res.json(o);
+  });
+  app.delete('/api/v1/courses/1/assignments/:id/overrides/:oid', (req, res) => {
+    if (!teacherOnly(req, res)) return;
+    const o = state.overrides.find((x) => x.id === Number(req.params.oid)); if (!o) return res.status(404).end();
+    o.deleted = true; res.json(o);
+  });
+
   app.post('/login/oauth2/token', async (req, res) => {
+    if (['authorization_code', 'refresh_token'].includes(req.body.grant_type)) {
+      if (req.body.client_id !== API_KEY.id || req.body.client_secret !== API_KEY.secret) return res.status(401).json({ error: 'invalid_client' });
+      const who = req.body.grant_type === 'authorization_code' ? state.apiCodes.get(req.body.code) : state.refresh.get(req.body.refresh_token);
+      if (!who) return res.status(400).json({ error: 'invalid_grant' });
+      state.apiCodes.delete(req.body.code);
+      const access = crypto.randomBytes(16).toString('hex'); const refresh = crypto.randomBytes(16).toString('hex');
+      state.apiTokens.set(access, who); state.refresh.set(refresh, who);
+      return res.json({ access_token: access, token_type: 'Bearer', expires_in: 3600, refresh_token: refresh, user: { id: Number(USERS[who].canvasId), name: USERS[who].name } });
+    }
     try {
       const reg = regByClient(decodeJwt(req.body.client_assertion).iss);
       if (!reg) throw new Error('unknown client');
@@ -244,6 +313,25 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
     }
     log(`score ${b.scoreGiven ?? '—'}/${b.scoreMaximum} (${b.gradingProgress}) for ${b.userId} on "${a.title}"`);
     res.json({ resultUrl: `${base}/results/1` });
+  });
+
+  app.get('/courses/1/assignments/:id', (req, res) => {
+    const a = state.assignments[Number(req.params.id)];
+    const role = state.lastRole || 'student';
+    const reg = a?.app === 'quizzes' ? state.quizRegistration : state.registration;
+    if (!a || a.deleted || !reg) return res.status(404).send('Assignment not found');
+    const student = !USERS[role].roles.some((r) => /Instructor|Administrator/.test(r));
+    let note = '';
+    if (student && a.rest && !a.rest.published) note = 'This assignment is not available yet.';
+    else if (student && a.rest?.unlock_at && Date.parse(a.rest.unlock_at) > Date.now()) note = `This assignment is locked until ${new Date(a.rest.unlock_at).toLocaleString()}.`;
+    const login = `${toolUrl}/lti/login?${new URLSearchParams({ iss: base, login_hint: role, client_id: reg.client_id, lti_deployment_id: state.deploymentId, target_link_uri: `${toolUrl}/lti/launch`, lti_message_hint: `rl:assign-${a.id}` })}`;
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(a.title)}</title><style>body{font-family:system-ui,sans-serif;margin:0;background:#f5f5f5;color:#2d3b45}
+      header{background:#fff;padding:10px 20px;border-bottom:3px solid #278DDF;display:flex;gap:16px;align-items:center}header img{height:40px}
+      main{max-width:1100px;margin:20px auto;background:#fff;padding:20px 28px;border-radius:6px} iframe{width:100%;height:760px;border:0}</style></head><body>
+      <header><img src="${base}/logo.jpg" alt="ReachLMS"><a href="${base}/?as=${role}">Biology 101</a> › Assignments › ${esc(a.title)}</header>
+      <main><h1>${esc(a.title)}</h1>${a.rest?.due_at ? `<p>Due ${esc(new Date(a.rest.due_at).toLocaleString())} · ${a.lineItem.scoreMaximum} pts</p>` : `<p>${a.lineItem.scoreMaximum} pts</p>`}
+      ${note ? `<p><strong>${esc(note)}</strong></p>` : `<iframe id="tool" src="${esc(login)}" title="${esc(a.title)}"></iframe>`}</main>
+      <script>window.addEventListener('message',function(e){var d=e.data||{};if(d.subject==='lti.frameResize'){document.getElementById('tool').style.height=(Number(d.height)+10)+'px'}})</script></body></html>`);
   });
 
   app.get('/state', (req, res) => res.json({ registered: !!state.registration, quizzesRegistered: !!state.quizRegistration, page: state.page, assignments: state.assignments, log: state.log }));

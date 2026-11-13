@@ -234,12 +234,30 @@ Installing at the top **Admin** account makes it available in every course. To p
 
 ### 3.4 Optional: install ReachQuizzes (the Quizzes+ course menu item)
 
-This is a second, small registration from the same ReachStudio server.
+ReachQuizzes needs two things in ReachLMS: its own registration, and an API key so it can create assignments.
+
+**A. Create the API key** (lets Quizzes+ manage assignments, as each teacher who authorizes it):
+1. **Admin → Developer Keys → + Developer Key → + API Key.**
+2. Fill in:
+   - **Key Name:** `ReachQuizzes`
+   - **Redirect URIs:** `https://YOUR-ADDRESS/lti/canvas/callback`
+   - Leave **Enforce Scopes** off. If your policy needs it on, allow: courses (show), assignment groups (list), sections (list), users (list), assignments (list, show, create, update, delete) and assignment overrides (list, create, delete).
+3. Click **Save**, then switch the key's **State** to **ON**.
+4. In the **Details** column, copy the **ID** (the long number). Click **Show Key** and copy the **key**.
+5. On Render, open your service, then **Environment**, and add:
+   - `CANVAS_API_CLIENT_ID` = the ID
+   - `CANVAS_API_CLIENT_SECRET` = the key
+6. Save. Render redeploys.
+
+**B. Register ReachQuizzes:**
 1. **Admin → Developer Keys → + Dynamic Registration**, and paste `https://YOUR-ADDRESS/lti/register?app=quizzes`.
 2. Click **Install**, then switch the new **ReachQuizzes** key **ON**. Add it under **Settings → Apps** if it isn't listed there.
-3. It is **off in every course** until a teacher switches it on, in **Settings → Navigation**: drag **Quizzes+** up, and optionally drag ReachLMS's own **Quizzes** down to hide it.
 
-To change the menu label (for example to "Quizzes", "Quiz Hub" or "Assessments"), set `QUIZ_NAV_LABEL` on Render **before** step 1. ReachLMS saves the label when the tool is installed.
+If you installed ReachQuizzes before this version, install it again. The new version asks ReachLMS for the course ID, user ID and ReachLMS address on each launch.
+
+**C. In a course:** in **Settings → Navigation**, drag **Quizzes+** into the visible list, and optionally drag ReachLMS's own **Quizzes** into the hidden list.
+
+To change the menu label (for example "Quizzes", "Quiz Hub" or "Assessments"), set `QUIZ_NAV_LABEL` **before** step B.
 
 ---
 
@@ -284,12 +302,14 @@ On the free Render plan you re-register after every deploy anyway.
 
 ### 4.4 ReachQuizzes (if installed)
 
-1. In the course, **Settings → Navigation**: drag **Quizzes+** into the visible list, then **Save**.
-2. Click **Quizzes+**, then **Add a quiz**. Pick a Quiz from your library, or create one.
-3. Optionally, on its **Grading** tab, turn off *Show whether each answer is right or wrong* for exam mode.
-4. Click **Publish**. **You should see** a new assignment with the same name on the **Assignments** page.
-5. In **Student View**, open **Quizzes+**, take the quiz and press **Submit**. **You should see** it move to *Submitted*.
-6. As the teacher, **SpeedGrader** shows the attempt and every answer. **Quizzes+ → Results** shows the same.
+1. Open **Quizzes+**. The first time, click **Authorize** and allow access in the window that opens. **You should see** the quiz list, empty, with a **+ Quiz** button.
+2. Click **+ Quiz**, give it a name and choose an assignment group. **You should see** the quiz editor. The quiz is also already on the **Assignments** page, unpublished, in that group.
+3. **Details:** add instructions, and choose Display grade as, attempts and what students see afterwards.
+4. **Questions:** add a few question types, with points.
+5. **Assign To:** set a due date, or add a section with its own dates.
+6. Click **Save & publish**. **You should see** the assignment in ReachLMS published, with the right points, group, dates and description.
+7. In **Student View**, open **Quizzes+**, then **Start**. The quiz opens on its assignment page. Answer it and press **Submit**.
+8. As the teacher, open **SpeedGrader**. **You should see** the answers table, each question with the points earned, and the quiz below. Essay questions say **grade in SpeedGrader**.
 
 ### 4.5 Other places worth checking
 

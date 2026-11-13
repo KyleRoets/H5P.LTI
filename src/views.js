@@ -4,6 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { isSecure, secureData } from './secure.js';
+import { studentData } from './rqquiz.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const json = (o) => JSON.stringify(o).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
@@ -65,8 +66,9 @@ export const views = {
       token,
       // Students in exam mode never receive the answer key (see secure.js).
       content: { id: content.id, type: content.type, title: content.title,
-        data: opts.graded && !opts.teacher && isSecure(content.type, opts.grading) ? secureData(JSON.parse(content.data)) : JSON.parse(content.data) },
-      secure: !!(opts.graded && !opts.teacher && isSecure(content.type, opts.grading)),
+        data: !opts.teacher && content.type === 'rqquiz' ? studentData(JSON.parse(content.data))
+          : opts.graded && !opts.teacher && isSecure(content.type, opts.grading) ? secureData(JSON.parse(content.data)) : JSON.parse(content.data) },
+      secure: !!(!opts.teacher && content.type === 'rqquiz') || !!(opts.graded && !opts.teacher && isSecure(content.type, opts.grading)),
       canEdit: !!opts.canEdit,
       graded: !!opts.graded,
       teacher: !!opts.teacher,

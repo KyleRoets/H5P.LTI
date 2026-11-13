@@ -1002,3 +1002,93 @@ table.results td.num { text-align: center; }
 .rq-state.done { color: #136b47; } .rq-state.closed { color: var(--muted); } .rq-state.soon { color: var(--amber); }
 .rq-back { margin-bottom: 8px; }
 @media (max-width: 640px) { .rq-row, .rq-card { flex-wrap: wrap; } .rq-actions { justify-content: flex-start; } }
+
+/* ReachQuizzes (course quizzes, Canvas-like) */
+.rq-loading { padding: 40px; text-align: center; }
+.rq-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.rq-top h2 { margin: 0; color: var(--navy); }
+.rq-top .help { margin: 2px 0 0; }
+.rq-connect { display: flex; gap: 16px; align-items: flex-start; background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 20px 22px; max-width: 720px; }
+.rq-connect h3 { margin: 0 0 6px; color: var(--navy); }
+.rq-connect p { margin: 0 0 12px; color: var(--muted); }
+.rq-connect-ico { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; background: var(--sky-soft); color: var(--sky-2); flex: none; }
+.rq-tools { display: flex; justify-content: flex-start; margin-bottom: 10px; }
+.rq-search { max-width: 320px; }
+.rq-groups { display: grid; gap: 14px; }
+.rq-group-block { background: #fff; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.rq-group-block > header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: #f5f7fa; border-bottom: 1px solid var(--line); font-weight: 750; color: var(--ink); }
+.rq-group-block > header span:first-child { display: flex; gap: 6px; align-items: center; }
+.rq-weight { font-weight: 600; color: var(--muted); font-size: 13px; background: #fff; border: 1px solid var(--line); border-radius: 99px; padding: 2px 10px; }
+.rq-none { margin: 0; padding: 12px 16px; color: var(--muted); font-size: 14px; }
+.rq-item { display: flex; gap: 12px; align-items: center; padding: 12px 14px 12px 12px; border-bottom: 1px solid var(--line-2); border-left: 4px solid var(--green); }
+.rq-item:last-child { border-bottom: 0; }
+.rq-item.unpublished { border-left-color: #c3ccd9; }
+.rq-item-ico { color: var(--muted); display: inline-flex; }
+.rq-item-main { flex: 1; min-width: 0; }
+.rq-item-title { font-weight: 700; color: var(--sky-2); text-decoration: none; font-size: 15.5px; }
+a.rq-item-title:hover { text-decoration: underline; }
+.rq-item-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--muted); margin-top: 3px; }
+.rq-item-meta strong { color: var(--ink); font-weight: 650; }
+.rq-pub { width: 32px; height: 32px; border-radius: 50%; border: 0; background: transparent; color: #8590a3; display: grid; place-items: center; cursor: pointer; }
+.rq-pub.on { color: var(--green); }
+.rq-pub:hover { background: var(--line-2); }
+.rq-item.student { border-left-color: var(--sky); }
+.rq-item.student.closed, .rq-item.student.soon { border-left-color: #c3ccd9; opacity: .8; }
+.rq-item.student.done { border-left-color: var(--green); }
+.rq-state { font-weight: 650; color: var(--navy); }
+.rq-state.done { color: #136b47; } .rq-state.closed { color: var(--muted); } .rq-state.soon { color: var(--amber); }
+.rq-new { display: grid; gap: 10px; }
+.rq-new label { display: grid; gap: 4px; font-weight: 600; font-size: 14px; }
+/* editor */
+.rq-bar { flex-wrap: wrap; }
+.rq-bar-title { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.rq-bar-title strong { color: var(--navy); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rq-total { font-size: 12.5px; color: var(--muted); }
+.rq-pubstate .pill { display: inline-flex; gap: 4px; align-items: center; }
+.rq-editor { max-width: 1000px; }
+.rq-tabs { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 4px; margin-bottom: 14px; }
+.rq-pane { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 18px 20px; display: grid; gap: 6px; }
+.rq-questions { display: grid; gap: 10px; }
+.rq-qcard { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.rq-qcard > header { display: flex; gap: 10px; align-items: center; padding: 8px 10px; background: #f8fafd; border-bottom: 1px solid var(--line-2); flex-wrap: wrap; }
+.rq-qtoggle { flex: 1; display: flex; gap: 8px; align-items: center; border: 0; background: none; font: inherit; cursor: pointer; text-align: left; min-width: 200px; padding: 4px; }
+.rq-qn { font-weight: 800; color: var(--navy); }
+.rq-qkind { display: inline-flex; gap: 4px; align-items: center; font-size: 12.5px; color: var(--muted); background: #fff; border: 1px solid var(--line); border-radius: 99px; padding: 2px 8px; }
+.rq-qpreview { color: var(--muted); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rq-qpts { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; color: var(--muted); }
+.rq-qpts input { width: 70px; padding: 4px 8px; }
+.rq-partial { display: inline-flex; gap: 5px; align-items: center; font-size: 13px; color: var(--muted); }
+.rq-qactions { display: inline-flex; gap: 2px; }
+.rq-qbody { padding: 12px 16px; }
+.rq-qbody:empty { display: none; }
+.rq-addq { justify-self: start; }
+.rq-kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.rq-kind { display: flex; gap: 10px; align-items: flex-start; text-align: left; border: 1.5px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 12px; cursor: pointer; font: inherit; }
+.rq-kind:hover { border-color: var(--sky); background: var(--sky-soft); }
+.rq-kind > span:last-child { display: flex; flex-direction: column; }
+.rq-kind small { color: var(--muted); }
+.rq-kind-ico { width: 32px; height: 32px; border-radius: 9px; background: var(--sky-soft); color: var(--sky-2); display: grid; place-items: center; flex: none; }
+.rq-assign { display: grid; gap: 12px; }
+.rq-assign-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: grid; gap: 8px; }
+.rq-assign-head { display: flex; justify-content: space-between; align-items: center; }
+.rq-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.rq-chip { display: inline-flex; align-items: center; gap: 2px; background: var(--sky-soft); color: #134d80; border-radius: 99px; padding: 2px 4px 2px 10px; font-size: 13.5px; font-weight: 600; }
+.rq-chip .icon-btn { width: 24px; height: 24px; }
+.rq-dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.rq-dates label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+/* student taking a quiz */
+.rq-quiz { display: grid; gap: 14px; }
+.rq-desc { margin-bottom: 2px; }
+.rq-q { border: 1px solid color-mix(in srgb, var(--rs-fg) 14%, transparent); border-radius: var(--rs-radius); padding: 0 16px 16px; background: var(--rs-bg); }
+.rq-q-head { display: flex; gap: 10px; align-items: center; margin: 0 -16px 12px; padding: 8px 16px; background: color-mix(in srgb, var(--rs-fg) 4%, var(--rs-bg)); border-bottom: 1px solid color-mix(in srgb, var(--rs-fg) 10%, transparent); border-radius: var(--rs-radius) var(--rs-radius) 0 0; }
+.rq-q-n { font-weight: 800; }
+.rq-q-pts { margin-left: auto; font-size: .85em; color: color-mix(in srgb, var(--rs-fg) 60%, transparent); }
+.rq-q-tag { display: inline-flex; gap: 4px; align-items: center; font-size: .78em; color: color-mix(in srgb, var(--rs-fg) 60%, transparent); }
+.rq-numeric-row { display: flex; gap: 8px; align-items: center; }
+.rq-numeric { max-width: 220px; }
+.rq-unit { color: color-mix(in srgb, var(--rs-fg) 65%, transparent); }
+/* questions are marked on Submit, not one by one: their own Check buttons are hidden (they still run) */
+.rq-quiz .rq-q .rs-actions { display: none !important; }
+.assign-bottom { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.assign-actions.confirming, .assign-bottom.confirming { background: var(--amber-soft); border-radius: 10px; padding: 8px 10px; }
+.assign-confirm { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; color: #6b4a0e; font-weight: 600; max-width: 520px; }

@@ -18,7 +18,10 @@ async function show(id) {
   const t = TYPES[r.content?.type] || { name: 'Activity', icon: 'help', color: '#888' };
   const switcher = r.attempts.length > 1 && h('label', { class: 'attempt-switch' }, 'Attempt ',
     h('select', { onchange: (e) => show(e.target.value) }, r.attempts.map((a) => h('option', { value: a.id, selected: a.id === s.id }, `${a.attempt} — ${fmtWhen(a.at)}${a.mode === 'auto' ? ` (${a.score}/${a.max})` : ''}`))));
-  const grade = s.mode === 'manual'
+  const pending = (s.responses || []).filter((r) => /grade in SpeedGrader/.test(r.note || ''));
+  const grade = pending.length && s.mode !== 'manual'
+    ? h('div', { class: 'review-grade manual' }, icon('edit', { size: 18 }), h('div', {}, h('strong', {}, `${s.score} / ${s.max} so far`), h('span', {}, `Marked automatically except ${pending.length} question${pending.length === 1 ? '' : 's'} for you to grade (below). Add those points to the score in SpeedGrader.`)))
+    : s.mode === 'manual'
     ? h('div', { class: 'review-grade manual' }, icon('edit', { size: 18 }), h('div', {}, h('strong', {}, 'Needs grading'), h('span', {}, `Enter a grade out of ${s.max} in SpeedGrader.`)))
     : h('div', { class: 'review-grade auto' }, icon('check', { size: 18 }), h('div', {}, h('strong', {}, `${s.score} / ${s.max}`), h('span', {}, s.sent !== null && s.sent !== s.score ? `Marked automatically. Best attempt (${s.sent}) is in the gradebook.` : 'Marked automatically and sent to the gradebook.')));
   root.replaceChildren(...[
