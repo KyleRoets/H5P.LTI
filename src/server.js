@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { config, internalUrl } from './config.js';
@@ -18,14 +19,19 @@ export async function createApp() {
   if (config.trustProxy) app.set('trust proxy', 1);
   app.disable('x-powered-by');
   // The tool must be framable by ReachLMS, so no X-Frame-Options. Basic hardening only.
+  // Compress HTML, JS, CSS and JSON (several times smaller over the network).
+  app.use(compression());
   app.use((req, res, next) => {
     res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
     res.set('X-Content-Type-Options', 'nosniff');
     next();
   });
-  // App code lives at a per-deploy path (/js/v/<build>/studio.js; its relative imports follow),
-  // so a new deploy can never run old cached code.
-  app.use('/js/v/:build', express.static(path.join(root, 'public', 'js'), { setHeaders: (res) => res.set('Cache-Control', 'no-cache') }));
+  // App code and styles live at a per-deploy path (/js/v/<build>/…, /css/v/<build>/app.css), so a
+  // new deploy can never run old code — and each file can be cached for good (no re-checks on
+  // every launch inside ReachLMS).
+  const forever = { setHeaders: (res) => res.set('Cache-Control', 'public, max-age=31536000, immutable') };
+  app.use('/js/v/:build', express.static(path.join(root, 'public', 'js'), forever));
+  app.use('/css/v/:build', express.static(path.join(root, 'public', 'css'), forever));
   // JS/CSS: always check for a newer copy (unchanged files answer "304 Not Modified").
   // Fonts and images rarely change and can be cached for a day.
   app.use(express.static(path.join(root, 'public'), {

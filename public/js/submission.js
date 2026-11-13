@@ -43,7 +43,7 @@ export function responsesTable(list, { marks = true } = {}) {
 /** Read-only view of a snapshot that grows to fit its content. hideMarks: hide right/wrong (student view). */
 export function snapshotFrame(html, build, { hideMarks = false } = {}) {
   const frame = h('iframe', { class: 'snapshot-frame', title: 'Submitted work', sandbox: 'allow-same-origin', loading: 'lazy' });
-  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/app.css?v=${encodeURIComponent(build || '')}">
+  frame.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="/css/v/${encodeURIComponent(build || 'x')}/app.css">
 <style>html,body{margin:0;background:transparent}body{padding:14px}.rs-actions .btn:not(.hidden){pointer-events:none}</style></head>
 <body class="player-body snapshot-body rs-assignment rs-no-reveal${hideMarks ? ' rs-hide-feedback' : ''}">${html || '<p class="rs-status">No snapshot was saved for this attempt.</p>'}</body></html>`;
   const fit = () => {

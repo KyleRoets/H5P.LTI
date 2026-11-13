@@ -9,6 +9,7 @@ import { takeSnapshot, snapshotFrame, fmtWhen, responsesTable } from './submissi
 const BOOT = window.BOOT;
 const api = makeApi(() => BOOT.token);
 const root = document.getElementById('player');
+root.replaceChildren(); // remove the loading indicator
 const G = BOOT.grading; // set when this launch is an assignment
 const pts = (n) => `${n} point${n === 1 ? '' : 's'}`;
 document.body.style.background = BOOT.content.data.style?.bg || '';

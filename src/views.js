@@ -1,19 +1,50 @@
 // Server-rendered HTML shells. The interactive UI is plain ES modules in /public/js.
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { isSecure, secureData } from './secure.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const json = (o) => JSON.stringify(o).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
 
-const shell = (title, body, { scripts = '', bodyClass = '' } = {}) => `<!doctype html>
+// Every app module, so the browser fetches them all at once instead of discovering imports one
+// level at a time (a long chain of round trips on a slow connection).
+const JS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'js');
+const MODULES = (function list(dir, rel = '') {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? list(path.join(dir, e.name), `${rel}${e.name}/`) : e.name.endsWith('.js') ? [`${rel}${e.name}`] : []));
+}(JS_DIR)).filter((f) => !/^(reset-page|quizzes-page|review-page|player-page|studio)\.js$/.test(f));
+const preloads = () => MODULES.map((f) => `<link rel="modulepreload" href="/js/v/${config.build}/${f}">`).join('');
+
+// Shown the instant the page arrives (inline styles, no downloads), until the app replaces it.
+// The real ReachLMS hand mark, read from the front-end brand file so there is one source.
+const HAND_PATH = fs.readFileSync(path.join(JS_DIR, 'brand.js'), 'utf8').match(/HAND_PATH = '([^']+)'/)?.[1] || '';
+const HAND = `<svg viewBox="198 70 604 856" width="34" height="48" aria-hidden="true"><path fill="#278DDF" fill-rule="evenodd" d="${HAND_PATH}"/></svg>`;
+export const splash = (label, { compact = false } = {}) => (compact
+  ? '<div class="boot-splash compact" role="status" aria-label="Loading"><span></span><span></span><span></span></div>'
+  : `<div class="boot-splash" role="status">${HAND}<p>${esc(label)}</p><i></i></div>`);
+const SPLASH_CSS = `<style>
+.boot-splash{min-height:70vh;display:grid;place-content:center;justify-items:center;gap:10px;font:600 15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;color:#5D6779;animation:bs-in .25s ease-out}
+.boot-splash svg{animation:bs-pulse 1.2s ease-in-out infinite}.boot-splash p{margin:0}
+.boot-splash i{display:block;width:120px;height:4px;border-radius:4px;background:linear-gradient(90deg,#E6F2FC 25%,#278DDF 50%,#E6F2FC 75%) 0 0/200% 100%;animation:bs-bar 1s linear infinite}
+.boot-splash.compact{min-height:120px;display:flex;align-items:center;justify-content:center;gap:6px}
+.boot-splash.compact span{width:8px;height:8px;border-radius:50%;background:#278DDF;opacity:.35;animation:bs-dot 1s ease-in-out infinite}
+.boot-splash.compact span:nth-child(2){animation-delay:.15s}.boot-splash.compact span:nth-child(3){animation-delay:.3s}
+@keyframes bs-pulse{50%{transform:scale(.92);opacity:.7}}@keyframes bs-bar{to{background-position:-200% 0}}@keyframes bs-dot{50%{opacity:1;transform:translateY(-3px)}}@keyframes bs-in{from{opacity:0}}
+@media (prefers-reduced-motion:reduce){.boot-splash *{animation:none!important}}
+</style>`;
+
+const shell = (title, body, { scripts = '', bodyClass = '', modules = false } = {}) => `<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title>
 <link rel="icon" href="/img/icon.svg" type="image/svg+xml">
 <link rel="icon" href="/img/icon-64.png" type="image/png" sizes="64x64">
 <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+${SPLASH_CSS}
 <link rel="preload" href="/fonts/alegreya-sans-800.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/css/app.css?v=${config.build}">
+<link rel="stylesheet" href="/css/v/${config.build}/app.css">
+${modules ? preloads() : ''}
 </head><body class="${bodyClass}">${body}${scripts}</body></html>`;
 
 // The "ReachStudio by YouMultiply" lockup for server-rendered pages.
@@ -23,7 +54,8 @@ export const views = {
   esc,
 
   studio(token) {
-    return shell(config.toolName, '<div id="app" class="app"><div class="loading">Loading ReachStudio…</div></div>', {
+    return shell(config.toolName, `<div id="app" class="app">${splash('Opening ReachStudio…')}</div>`, {
+      modules: true,
       scripts: `<script>window.BOOT=${json({ token, toolName: config.toolName, build: config.build })}</script><script type="module" src="/js/v/${config.build}/studio.js"></script>`,
     });
   },
@@ -43,7 +75,8 @@ export const views = {
       grading: opts.grading || null,
       preview: !!opts.preview,
     };
-    return shell(content.title, '<main id="player" class="player-root"></main>', {
+    return shell(content.title, `<main id="player" class="player-root">${splash('', { compact: true })}</main>`, {
+      modules: true,
       bodyClass: 'player-body',
       scripts: `<script>window.BOOT=${json(boot)}</script><script type="module" src="/js/v/${config.build}/player-page.js"></script>`,
     });
@@ -51,7 +84,8 @@ export const views = {
 
   // A submitted attempt, opened from SpeedGrader (or from the student's submission details).
   review(token) {
-    return shell('Submission', '<main id="review" class="review-root"><div class="loading">Loading submission…</div></main>', {
+    return shell('Submission', `<main id="review" class="review-root">${splash('Opening the submission…')}</main>`, {
+      modules: true,
       bodyClass: 'player-body review-body',
       scripts: `<script>window.BOOT=${json({ token, build: config.build })}</script><script type="module" src="/js/v/${config.build}/review-page.js"></script>`,
     });
@@ -59,7 +93,8 @@ export const views = {
 
   // ReachQuizzes for students: the course's published quizzes.
   quizzes(token) {
-    return shell(config.quizToolName, '<main id="quizzes" class="quizzes-root"><div class="loading">Loading quizzes…</div></main>', {
+    return shell(config.quizToolName, `<main id="quizzes" class="quizzes-root">${splash('Opening quizzes…')}</main>`, {
+      modules: true,
       bodyClass: 'player-body',
       scripts: `<script>window.BOOT=${json({ token, build: config.build, label: config.quizNavLabel })}</script><script type="module" src="/js/v/${config.build}/quizzes-page.js"></script>`,
     });
