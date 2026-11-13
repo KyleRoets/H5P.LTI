@@ -251,6 +251,16 @@ try {
     const snap = first.body.submission.snapshot;
     assert.match(snap, /Answer/);
     assert.doesNotMatch(snap, /<script|onerror|javascript:/i, 'active content is stripped');
+    // A ReachLMS admin (no course role) can review it too; another student can't; unknown ids explain why.
+    const la0 = await launch('rl:sg-0.user-student-1', 'admin');
+    assert.equal(la0.status, 200, la0.html);
+    const ta = api(bootToken(la0.html));
+    const ra = await ta('GET', `/api/submissions/${(await ta('GET', '/api/review')).body.id}`);
+    assert.equal(ra.status, 200); assert.equal(ra.body.submission.name, 'Sam Student');
+    const other = await launch('rl:sg-0.user-student-1', 'student2');
+    assert.equal(other.status, 403); assert.match(other.html, /role/);
+    const own = await launch('rl:sg-0.user-student-1', 'student');
+    assert.equal(own.status, 200, 'students can open their own submission details');
     // The lecturer opening the assignment itself gets the lecturer view and the results list.
     const la = await launch('rl:assign-0', 'teacher');
     const bt = boot(la.html);

@@ -306,6 +306,9 @@ If everything in Part 4 worked, it's ready for teachers.
 | `npm test` or `npm start` fails with a syntax or "unsupported" error | Node.js is older than 22.5 | Install the current LTS from nodejs.org |
 | `/health` doesn't load on Render | Still deploying, or the deploy failed | Render → your service → **Logs**. Wait for "ReachStudio listening" |
 | Render log shows `EACCES` or permission denied on `/data` | Old version of the code | Make sure you deployed the latest commit, which includes `docker-entrypoint.sh` |
+| SpeedGrader shows **Submission not found in ReachStudio** | ReachStudio's data was reset after the student submitted (for example a redeploy on the free Render plan, which has no persistent disk) | Grades in ReachLMS are kept. New attempts will open. Use a plan with a persistent disk so attempts are kept |
+| SpeedGrader shows **Submission not available** with your role | The person opening it isn't a teacher, TA or designer of that course, or a ReachLMS admin | Open it from the course's own SpeedGrader. The message lists the role ReachLMS sent |
+| Several **ReachStudio** entries in Developer Keys or Apps | ReachStudio was registered more than once | Keep the newest key ON. Delete or turn OFF the others, and remove old copies under **Settings → Apps**, so ReachLMS doesn't open older assignments with an old key |
 | Teachers' content disappears after a restart | No disk attached | Render → service → **Disks**: there must be a disk mounted at `/data` |
 | "Registration failed … must use https" | ReachLMS isn't on https | ReachLMS must be on https for production |
 | "Registration failed … (401/403)" | Registration link expired | Start the Dynamic Registration again from ReachLMS; the link is single use |

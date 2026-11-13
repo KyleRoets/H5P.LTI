@@ -14,6 +14,8 @@ const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '
 const USERS = {
   teacher: { sub: 'user-teacher-1', name: 'Taylor Teacher', given_name: 'Taylor', family_name: 'Teacher', email: 'taylor@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'] },
   guest: { sub: 'user-guest-1', name: 'Gale Guest', given_name: 'Gale', family_name: 'Guest', email: 'gale@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Instructor'] },
+  admin: { sub: 'user-admin-1', name: 'Alex Admin', given_name: 'Alex', family_name: 'Admin', email: 'alex@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/institution/person#Administrator', 'http://purl.imsglobal.org/vocab/lis/v2/system/person#User'] },
+  student2: { sub: 'user-student-2', name: 'Robin Student', given_name: 'Robin', family_name: 'Student', email: 'robin@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Learner'] },
   student: { sub: 'user-student-1', name: 'Sam Student', given_name: 'Sam', family_name: 'Student', email: 'sam@school.test', roles: ['http://purl.imsglobal.org/vocab/lis/v2/membership#Learner'] },
 };
 

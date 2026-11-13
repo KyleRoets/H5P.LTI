@@ -461,7 +461,12 @@ function forStudent(o, grading) {
 // One submitted attempt with its snapshot: for the lecturer (SpeedGrader / results list) or the student who made it.
 function canSeeSubmission(session, sub) {
   const l = session.lti;
-  if (!l || !sub || sub.platform_id !== l.platformId) return false;
+  if (!l || !sub) return false;
+  // Same ReachLMS site (it may have registered ReachStudio more than once, under several client IDs).
+  if (sub.platform_id !== l.platformId) {
+    const issuer = (id) => db.prepare('SELECT issuer FROM platforms WHERE id = ?').get(id)?.issuer;
+    if (!issuer(sub.platform_id) || issuer(sub.platform_id) !== issuer(l.platformId)) return false;
+  }
   if (l.kind === 'review') return l.reviewSub === sub.sub && l.reviewLink === sub.resource_link_id;
   if (l.kind === 'player' && l.teacherAssignment) return sub.resource_link_id === linkKey(l);
   if (l.kind === 'player' && l.ags) return sub.sub === l.sub && sub.resource_link_id === linkKey(l);

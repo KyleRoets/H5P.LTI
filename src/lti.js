@@ -65,6 +65,34 @@ function platformJwks(platform) {
 function isInstructor(roles = []) {
   return roles.some((r) => INSTRUCTOR_ROLES.some((x) => r.includes(x)));
 }
+// ReachLMS account or site admins (Canvas sends institution/system roles, often with no course role).
+const ADMIN_ROLES = ['institution/person#Administrator', 'system/person#Administrator', 'system/person#SysAdmin', 'system/person#AccountAdmin'];
+const isLmsAdmin = (roles = []) => roles.some((r) => ADMIN_ROLES.some((x) => r.includes(x)));
+
+/**
+ * Who may open a submitted attempt (SpeedGrader / submission details):
+ * - teachers, TAs and designers of the course it belongs to;
+ * - ReachLMS admins, and ReachStudio admins, from any course on the same ReachLMS site;
+ * - the student who submitted it.
+ * Returns { ok } or { ok: false, title, why } with a reason the person can act on.
+ */
+export function canReview(sub, { platform, lti, payload, userId }) {
+  if (!sub) {
+    return { ok: false, title: 'Submission not found in ReachStudio', why: 'ReachStudio no longer has this attempt. This happens when its data was reset (for example a redeploy on a server without a persistent disk) after the student submitted. The grade in ReachLMS is unaffected; attempts submitted from now on can be opened.' };
+  }
+  const subPlatform = db.prepare('SELECT issuer FROM platforms WHERE id = ?').get(sub.platform_id);
+  // Same ReachLMS site, even if ReachStudio was registered more than once (several client IDs).
+  if (!subPlatform || subPlatform.issuer !== platform.issuer) return { ok: false, title: 'Submission not available', why: 'This attempt was made on a different ReachLMS site.' };
+  const roles = lti.roles || [];
+  const studioAdmin = !!userId && db.prepare("SELECT 1 FROM users WHERE id = ? AND role = 'admin' AND status = 'active'").get(userId);
+  if (isLmsAdmin(roles) || studioAdmin) return { ok: true };
+  const sameCourse = !sub.context_id || !lti.contextId || sub.context_id === lti.contextId;
+  if (lti.instructor && sameCourse) return { ok: true };
+  if (payload.sub && sub.sub === payload.sub) return { ok: true };
+  if (lti.instructor) return { ok: false, title: 'Submission not available', why: 'This attempt belongs to a course you don\'t teach. Open it from SpeedGrader in its own course, or ask a ReachLMS admin.' };
+  const shown = roles.map((r) => r.split(/[#/]/).pop()).filter((r, i, a) => r && a.indexOf(r) === i).join(', ') || 'none';
+  return { ok: false, title: 'Submission not available', why: `Only the course's teachers, ReachLMS admins and the student who submitted it can view this attempt. ReachLMS sent your role as: ${shown}.` };
+}
 
 // ---------- tool configuration (manual install + dynamic registration) ----------
 // Canvas reads the pop-up size for the editor and assignment pickers from launch_width/height
@@ -166,7 +194,7 @@ export function canvasJsonConfig() {
         placements: [
           { placement: 'editor_button', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=editor_button'), text: config.toolName, icon_url: iconUrl(), selection_width: 1200, selection_height: 900 },
           { placement: 'assignment_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=assignment_selection'), text: `${config.toolName} activity`, selection_width: 1200, selection_height: 900 },
-          { placement: 'submission_type_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=submission_type_selection'), text: config.toolName, description: 'Interactive activity graded automatically or in SpeedGrader', require_resource_selection: true, selection_width: 1200, selection_height: 900 },
+          { placement: 'submission_type_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=submission_type_selection'), text: config.toolName, description: 'Interactive activity graded automatically or in SpeedGrader', selection_width: 1200, selection_height: 900 },
           { placement: 'link_selection', message_type: 'LtiDeepLinkingRequest', target_link_uri: url('/lti/launch?placement=link_selection'), text: `${config.toolName} activity`, selection_width: 1200, selection_height: 900 },
           { placement: 'course_navigation', message_type: 'LtiResourceLinkRequest', target_link_uri: url('/lti/launch?placement=course_navigation'), text: config.toolName, default: 'disabled', display_type: 'default', required_permissions: 'manage_course_content_add' },
         ],
@@ -263,6 +291,8 @@ export async function buildDeepLinkResponse(lti, content) {
     // Every assignment gets points: auto-marked items use their own maximum, the rest are
     // graded by the lecturer in SpeedGrader out of the points set on the Grading tab.
     item.lineItem = { scoreMaximum: grading.max, label: content.title, resourceId: content.id, tag: 'reach-studio' };
+    // Keep the name the lecturer gave the assignment (Canvas otherwise renames it to the item's title).
+    item['https://canvas.instructure.com/lti/preserveExistingAssignmentName'] = true;
   }
   const k = signingKey();
   const claims = {
@@ -383,9 +413,13 @@ ltiRouter.post('/lti/launch', async (req, res) => {
       // SpeedGrader (or a student's submission details) opening a submitted attempt.
       if (reviewId) {
         const sub = db.prepare('SELECT * FROM submissions WHERE id = ?').get(reviewId);
-        const sameCourse = sub && sub.platform_id === platform.id && (!sub.context_id || sub.context_id === lti.contextId);
-        const allowed = sameCourse && (lti.instructor || sub.sub === payload.sub);
-        if (!allowed) return res.status(403).send(views.message('Submission not available', 'You can only view submissions for your own course (lecturers) or your own work (students).'));
+        const access = canReview(sub, { platform, lti, payload, userId });
+        if (!access.ok) {
+          console.warn(`Review ${reviewId} refused: ${access.why} roles=${JSON.stringify(lti.roles)} context=${lti.contextId} sub_context=${sub?.context_id}`);
+          return res.status(sub ? 403 : 404).send(views.message(access.title, views.esc(access.why)));
+        }
+        // Staff (anyone allowed who isn't the student themself) see the full lecturer view.
+        lti.instructor = sub.sub !== payload.sub || lti.instructor;
         lti.kind = 'review';
         lti.reviewId = reviewId;
         lti.reviewContentId = sub.content_id;
