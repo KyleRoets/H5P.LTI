@@ -1,3 +1,360 @@
-# H5P.LTI
+# ReachStudio by YouMultiply
 
-Interactive content builder for ReachLMS (Canvas), integrated with LTI 1.3.
+Interactive content builder for **ReachLMS (Canvas)**, integrated with **LTI 1.3 / LTI Advantage**.
+
+Teachers click the **ReachStudio** button in the ReachLMS Rich Content Editor (RCE). A pop-up opens where they:
+
+1. **Create an account** the first time. The account is linked to their ReachLMS login, so after that the studio opens straight away.
+2. **Build new interactive content** with a visual builder and a live preview.
+3. **Store and organise** what they've made: folders, search, filter by type, duplicate, move and delete.
+4. **Insert** any item into the page, quiz, assignment or discussion they're editing.
+
+Students see the content embedded inline. Scored content can also be added as a **graded assignment**, and scores go to the ReachLMS gradebook automatically.
+
+> **Quickest test, nothing to install:** [open it in GitHub Codespaces](https://codespaces.new/KyleRoets/H5P.LTI?ref=reach-studio-lti-tool). It starts in demo mode with a pretend ReachLMS course in a new tab.
+>
+> **New here?** Follow the step-by-step [setup and testing guide](docs/SETUP-GUIDE.md): try it locally, host it on Render, install it into ReachLMS, then test it in a course.
+
+## Content types
+
+30 interactive types covering what H5P and Lumi offer, written as original code with no H5P dependency. The "Create new" gallery groups them into four sections and has a search box. Library cards show a live miniature of each item. Images and audio are uploaded; video can be uploaded or linked from YouTube or Vimeo. "Graded" types send a score to the ReachLMS gradebook when added as an assignment.
+
+**Questions & quizzes**
+
+| Type | What learners do | Graded |
+|---|---|---|
+| Quiz | Multiple choice, multi-select and true/false; feedback, pass mark, shuffling | ✓ |
+| Fill in the Blanks | Type missing words; alternative answers (`colour/color`) | ✓ |
+| Drag and Drop | Drag labels onto zones on an image or board, with distractors | ✓ |
+| Drag the Words | Drag words into gaps; optional extra wrong words | ✓ |
+| Mark the Words | Click the words that match a rule | ✓ |
+| Find the Hotspot | Click the right area(s) of an image | ✓ |
+| Put in Order | Put items (text or images) in the right order | ✓ |
+| Matching Pairs | Match each item on the left with one on the right | ✓ |
+| Summary | Pick the correct statement from each set to build a summary | ✓ |
+| Essay | Write an answer; scored on keywords, with a model answer shown | ✓ |
+| Dictation | Listen (audio or text-to-speech) and type what you hear | ✓ |
+| Arithmetic Quiz | Timed sums: +, −, ×, ÷ or mixed | ✓ |
+
+**Lessons & stories**
+
+| Type | What learners do | Graded |
+|---|---|---|
+| Presentation | Slides (5 layouts, colours, images) with built-in questions; full-screen and keyboard navigation | ✓ |
+| Interactive Book | Chapters of text, images and any other activity, with progress and a total score | ✓ |
+| Branching Scenario | Choose a path through scenes to one of several endings, optionally scored | ✓ |
+| Interactive Video | An uploaded MP4/WebM, or a YouTube or Vimeo video, pauses at set times for questions or info | ✓ |
+| Timeline | Scroll through dated events with images | – |
+| Accordion | Expandable sections (FAQs, glossaries) | – |
+
+**Images & media**
+
+| Type | What learners do | Graded |
+|---|---|---|
+| Video | Watch an uploaded video (with captions and a cover image), or a YouTube or Vimeo video — video hosting for ReachLMS | – |
+| Image Hotspots | Click markers on an image to reveal text and pictures (8 marker icons, sizes, shapes and colours) | – |
+| Image Slider | Step through a captioned image carousel | – |
+| Before and After | Drag a handle to compare two images | – |
+| Collage | Several images in a chosen grid layout | – |
+| Chart | Bar, horizontal bar, pie or doughnut chart | – |
+| Guess the Answer | Look at an image, think, then reveal the answer | – |
+
+**Games & practice**
+
+| Type | What learners do | Graded |
+|---|---|---|
+| Memory Game | Flip cards to find matching pairs | – |
+| Crossword | Solve a generated crossword from clues | ✓ |
+| Word Search | Find hidden words in a letter grid | ✓ |
+| Flashcards | Flip cards with optional images | – |
+| Personality Quiz | Answers lead to one of several results | – |
+
+Every type has a full description (what it is, what it's good for, what learners do, a tip) and a working example in the "Learn more" panel. New content starts empty; teachers can also start from the example.
+
+**Editing:**
+- **Rich text:** a toolbar with bold, italic, underline and strikethrough, text and highlight colours, lists, alignment and links. Answers for Fill in the Blanks, Drag the Words and Mark the Words are marked with a **Make answer** button.
+- **Appearance tab:** accent, background and text colours, font, text size, corner style and embed width for every item, plus per-item colours (hotspot markers, drop zones, card faces, accordion headings, slide backgrounds).
+- **Undo and redo:** buttons, or Ctrl/Cmd+Z.
+- **Lists:** duplicate, reorder and collapse items.
+- **Live preview:** renders at the real embed width, with tablet and phone sizes, so what you see is exactly what appears in ReachLMS.
+
+**Roles:**
+- **Teacher (default):** their own library and builder.
+- **Admin:** an **Admin** tab with usage statistics, exact storage per account (images, video, audio, captions — measured on disk) and the connected ReachLMS sites, plus user management: see a user's storage and activity, suspend or reactivate, make admin, create a password reset link, or delete the account and its content.
+- **Passwords and recovery:**
+  - The account menu (click your avatar) has **Change password**. When ReachLMS has just confirmed who you are, you don't need your current password; otherwise you do.
+  - **Forgot your password?** If you've opened ReachStudio from ReachLMS before, opening it from ReachLMS again lets you choose a new password. This works because signing out keeps the ReachLMS link but stops automatic sign-in.
+  - Otherwise, an admin uses the **key** button in the Admin tab to create a one-time reset link, valid for 1 hour, and sends it to the person.
+  - Any password change or reset signs out the account's other sessions. Other ReachLMS logins then need to sign in once with the new password.
+- **Becoming an admin:** list admin emails in `ADMIN_EMAILS`, or run `npm run make-admin -- someone@school.edu`. In demo mode the first account is an admin.
+
+Every player works with mouse, touch and keyboard. Drag interactions also support "click to pick, click to place".
+
+## How the LTI integration works
+
+| Placement (registered automatically) | Message type | What it does in ReachLMS |
+|---|---|---|
+| `editor_button` | Deep Linking | ReachStudio button in the RCE. Opens a 1200×900 pop-up (capped to the window). Inserts an `ltiResourceLink` with an `iframe` size, so content shows inline in pages, assignments, quizzes and discussions |
+| `assignment_selection` | Deep Linking | *Assignment → Submission type → External Tool → Find → ReachStudio*. Adds a `lineItem`, so the assignment is graded (see below) |
+| `submission_type_selection` | Deep Linking | **ReachStudio** listed directly in an assignment's *Submission type* menu. Same as above, one click shorter |
+| `link_selection` | Deep Linking | *Modules → Add item → External Tool* (not graded) |
+| `course_navigation` | Resource Link | Optional "ReachStudio" course menu link for teachers. Opens **inside ReachLMS** with the course menu still showing (`display_type: default`, never a new window). **Disabled by default**; teachers enable it in *Settings → Navigation* |
+
+### Graded assignments and SpeedGrader
+
+When ReachStudio content is an assignment's submission type, ReachStudio replaces the assignment's submit box. Students do the activity, then press **Submit**.
+
+- **Every attempt is a submission in SpeedGrader.**
+  - ReachStudio posts each attempt to the assignment's line item with Canvas's submission extension: `submission_type: basic_lti_launch`, with a link back to that attempt.
+  - When the lecturer opens SpeedGrader, ReachLMS launches that link. ReachStudio then shows a read-only snapshot of exactly what the student did: answers, drag-and-drop placements, typed text, and right or wrong markings.
+- **Auto-marked** (quizzes, drag and drop, fill in the blanks…): the score is sent with `gradingProgress: FullyGraded`, so the grade appears straight away.
+- **Lecturer-graded** (essays, or any item set to "By the lecturer"):
+  - The attempt is sent with `activityProgress: Submitted` and `gradingProgress: PendingManual` and no score, so SpeedGrader shows it as **Needs grading**.
+  - Resubmitting keeps a grade the lecturer already gave (`preserve_score`).
+  - Items with no right answers (hotspots, flashcards…) are always lecturer-graded.
+- **Grading tab** in the builder: automatic or by the lecturer, points (for lecturer grading), attempts allowed (1–10 or unlimited), best or latest score. The attempt limit is enforced by the server.
+- **What students see** (auto-marked items):
+  - **Show whether each answer is right or wrong:** turn it off and students just answer, move on and submit. There are no ticks, crosses, correct answers or scores; Check buttons become *Save answer*. Answers are still marked, and the lecturer sees everything.
+  - **Show answers button:** off by default.
+  - **Show the score after submitting:** when off, the score is also left out of what the server sends the student. To hold the grade back in the gradebook too, set the assignment's grade posting policy to *Manually*.
+- **What the lecturer sees in SpeedGrader:**
+  - An **Answers** table: each question, the student's answer, the correct answer and right or wrong.
+  - Recorded for quizzes, slide questions, video questions, summaries, arithmetic, branching paths and activities inside interactive books.
+  - Below it, the activity exactly as it was submitted. Book chapters are all included.
+- **During an assignment:** the activities' own "Try again" and "Show answers" buttons are hidden. A new attempt starts fresh from the assignment bar, while attempts remain.
+- **Lecturer view:** a lecturer opening the assignment sees a lecturer view, with **Student submissions** listing every student's attempts and their work.
+- **Security of snapshots:**
+  - Snapshots are stripped of scripts and event handlers on the server.
+  - They are only ever shown in a sandboxed frame with scripts disabled.
+  - Only lecturers of that course, or the student who made the attempt, can open them.
+
+Standards used:
+- **Login and launch:** OIDC third-party login (`/lti/login`), then signed `id_token` validation (`/lti/launch`). The tool checks the signature against the platform's public keys, plus the issuer, audience, nonce (single use), version and deployment.
+- **Deep Linking 2.0:** responses are signed with the tool's own RSA key, published at `/.well-known/jwks.json`.
+- **Assignment and Grade Services (grades):** the tool gets an access token using its own signed key (`client_credentials` with `private_key_jwt`), then posts the score to `{lineitem}/scores`, with Canvas's `https://canvas.instructure.com/lti/submission` extension so each attempt becomes a SpeedGrader submission.
+- **Dynamic Registration:** at `/lti/register`. Manual JSON configuration is also available at `/lti/canvas-config.json`.
+- **Embed height:** embedded content tells ReachLMS its height (`lti.frameResize`), so iframes fit the content without scrollbars.
+- **No third-party cookies:** each launch gets its own short-lived session token, so the tool works in Safari and other browsers that block cookies inside iframes.
+
+## Install into ReachLMS
+
+### 1. Deploy the tool on HTTPS
+
+```bash
+cp .env.example .env        # set PUBLIC_URL to your https address
+```
+
+```bash
+npm ci
+```
+
+```bash
+npm start
+```
+
+Or on **Render**: use *New → Blueprint* with this repository. `render.yaml` sets up the service and a persistent disk; see the [setup guide](docs/SETUP-GUIDE.md#part-2-put-it-on-the-internet-render). **Netlify and other static or serverless hosts can't run this app.**
+
+Or with Docker (keep `/data` on a persistent volume; the image fixes the volume's ownership on start and then runs as the unprivileged `node` user):
+
+```bash
+docker build -t reach-studio .
+```
+
+```bash
+docker run -d -p 3000:3000 -e PUBLIC_URL=https://studio.example.com -e TRUST_PROXY=true -v reach-studio-data:/data reach-studio
+```
+
+Put it behind a TLS reverse proxy (nginx, Caddy or a load balancer). Requirements:
+- **Node 22.5+** (it uses the built-in SQLite).
+- **Allow framing:** the tool must be framable by your ReachLMS domain. It deliberately sends no `X-Frame-Options` header, so make sure your proxy doesn't add one either.
+- **Network access both ways:** ReachLMS must be able to reach the tool's `/.well-known/jwks.json`, and the tool must be able to reach ReachLMS's `/api/lti/security/jwks` and `/login/oauth2/token`.
+
+### 2a. Dynamic Registration (recommended)
+
+1. In ReachLMS go to **Admin → Developer Keys → + Developer Key → + LTI Registration** (newer versions: *Admin → Apps → Manage → + App → Dynamic Registration*).
+2. Paste `https://<your-studio>/lti/register`. If you set `REGISTRATION_CODE`, enter it, then click **Install**.
+3. Review the key in ReachLMS, make sure it is **ON**, then deploy it: *Admin → Settings → Apps → + App → By Client ID*.
+
+Dynamic Registration reads ReachLMS's own issuer and endpoints, so it works whether ReachLMS is Instructure-hosted or self-hosted.
+
+### 2b. Manual install (if Dynamic Registration isn't available)
+
+1. In ReachLMS: **Developer Keys → + LTI Key → Method: Enter URL** → `https://<your-studio>/lti/canvas-config.json`. Set the redirect URI to `https://<your-studio>/lti/launch`. Save, turn it **ON**, and copy the Client ID.
+2. Register ReachLMS in the tool:
+   ```bash
+   npm run add-platform -- --issuer <ReachLMS issuer> --client-id <client id> --base https://<your-reachlms-domain> --name "ReachLMS"
+   ```
+   - **Issuer:** on a self-hosted (open-source) Canvas, this is the `lti_iss` value in ReachLMS's `config/security.yml`. On Instructure-hosted Canvas it is `https://canvas.instructure.com`, and the endpoints live on `https://sso.canvaslms.com` (pass `--auth`, `--token` and `--jwks` explicitly).
+3. Deploy the tool by Client ID, as in step 2a.
+
+## Demo mode (no ReachLMS needed)
+
+`npm run demo` (or `DEMO_MODE=true`) serves a pretend ReachLMS at `/demo` on the same address as the tool, so the whole flow can be tested from one URL. This works locally, in GitHub Codespaces (configured in `.devcontainer/`), or on a free Render service. The public address is detected automatically on Render and Codespaces. **Never use demo mode on the instance your real ReachLMS talks to.**
+
+## Local demo with a separate mock (two processes)
+
+`test/mock-canvas.js` is a small mock ReachLMS. It provides a course page with a Rich Content Editor button, Dynamic Registration, deep link return, a token endpoint and a gradebook.
+
+```bash
+npm install
+```
+
+```bash
+PUBLIC_URL=http://localhost:3000 ALLOW_INSECURE_PLATFORMS=true npm start
+```
+
+In a second terminal:
+
+```bash
+npm run mock-canvas
+```
+
+Then open <http://localhost:4000>:
+1. Click **Install ReachStudio**.
+2. Use the RCE's **ReachStudio** button to create an account, build something and **Save & insert**.
+3. Add a graded assignment, then switch to **Student** to complete it and watch the gradebook update.
+
+## ReachQuizzes: course quizzes (Quizzes+)
+
+ReachQuizzes adds a **Quizzes+** item to the course menu. It is a quiz tool that works like ReachLMS's own Quizzes, with ReachStudio's question types.
+
+It runs on the same ReachStudio server, with the same storage. It is installed as a **second registration**, because Canvas allows each tool only one course-menu link. It is off in every course until a teacher switches it on in **Settings → Navigation**, where they can also hide ReachLMS's own Quizzes.
+
+**No separate login:**
+- A teacher's account is created from their ReachLMS identity the first time they open Quizzes+.
+- Quizzes belong to the course: any teacher of the course can edit them.
+- The first time, each teacher clicks **Authorize** once, so Quizzes+ can manage the course's assignments in ReachLMS.
+
+**Every quiz is a real ReachLMS assignment.** LTI alone can't set an assignment group, description, Assign To or publish state, so Quizzes+ uses the Canvas REST API, acting as the teacher who is signed in. Creating or saving a quiz sets:
+- the **assignment group** (weights stay in ReachLMS)
+- the **description**
+- **points** (the total of the question points)
+- **Display grade as**
+- **due and availability dates**
+- **Assign To**: everyone, sections, or individual students, each with their own dates
+- **published or unpublished**
+
+Gradebook weighting, SpeedGrader, the Assignments page, the calendar and modules all work as they do for any assignment. ReachLMS enforces the availability dates.
+
+**Question types:**
+- multiple choice
+- multiple answer (with partial credit)
+- true/false
+- numeric (with a margin)
+- fill in the blanks
+- drag the words
+- categorization
+- drag and drop on an image
+- matching
+- ordering
+- hot spot
+- mark the words
+- pick the true statement
+- essay (graded in SpeedGrader)
+
+Each question has its own points. Interactive questions can give **partial credit** (a share of the points for each part right) or be all-or-nothing.
+
+**Settings:**
+- attempts allowed, and highest or latest score
+- shuffle question order
+- what students see after submitting: their score, right or wrong, the correct answers
+
+**Taking a quiz:**
+- **Where:** students open a quiz from Quizzes+ or the Assignments page, and take it on the assignment page in ReachLMS.
+- **Layout:** all questions on one page. Marking is never shown while answering. Submit at the top or the bottom asks for confirmation in place.
+- **Marking:** choice and numeric answers are marked on the server, and their answer keys are never sent to the browser. Interactive questions report how much is right, and the server turns that into points.
+- **Grade:** the attempt goes to SpeedGrader with an answers table showing each question, the student's answer, the correct answer and the points. Quizzes with essays are sent with the automatic part scored and marked "needs grading".
+
+**Setup:** an admin creates an **API Developer Key** in ReachLMS and puts its ID and key on the server (`CANVAS_API_CLIENT_ID`, `CANVAS_API_CLIENT_SECRET`). See the setup guide, Part 3.4.
+
+**Next stages:**
+1. Question banks with random draws per student, and shared passages.
+2. Time limits with automatic submission, access codes, one question per page with no going back, and results release dates.
+3. Moderate (extra time or attempts per student), per-question statistics and regrading.
+
+## Media storage: where files live
+
+Uploaded images, audio, captions and videos are stored on the **ReachStudio server**, in `DATA_DIR/media`. On Render that is the persistent disk mounted at `/data`.
+
+**ReachLMS storage is not used.**
+- ReachLMS only stores the LTI link to an item: a few hundred bytes.
+- Course and user file quotas in ReachLMS are not touched.
+- Students stream the file from ReachStudio, inside the ReachLMS page.
+
+**YouTube and Vimeo videos use no storage at all.** The Video and Interactive Video types embed them from YouTube or Vimeo:
+- YouTube is embedded with its privacy-enhanced player.
+- Vimeo can be public or unlisted. Unlisted links are kept with their privacy code.
+
+**How storage is measured:**
+- **Exact sizes:** the Admin tab shows every account's storage from the actual files on disk, split into images, video, audio and captions/other. It also shows the server total and the free space left.
+- **Teachers' view:** each teacher sees their own usage at the bottom of the library sidebar.
+- **Deleting an account** deletes its files.
+- **Deleting a content item** keeps its files, because they may be used in other items. Those files still count until the account is removed.
+
+**Limits:**
+
+| Setting | Default | What it does |
+|---|---|---|
+| `MAX_UPLOAD_MB` | 50 | Largest image, audio or captions file |
+| `MAX_VIDEO_MB` | 500 | Largest video file |
+| `STORAGE_QUOTA_MB` | 0 (no limit) | Per-account limit. Uploads that would go over it are refused, with a suggestion to use YouTube or Vimeo |
+
+**Planning for video.** Video fills a disk quickly. A 10-minute 1080p lecture is very roughly 100–300 MB, and a 720p export about half that. Options, from simplest:
+1. **Keep long videos on YouTube (unlisted) or Vimeo** and link them. Free or cheap hosting, adaptive streaming for slow connections, and no ReachStudio storage.
+2. **Upload short clips** (under a few minutes, exported as 720p MP4 H.264), and set `STORAGE_QUOTA_MB` so one account can't fill the disk.
+3. **Grow the disk.** On Render, raise `sizeGB` on the disk: it can grow but not shrink. Back up `/data`.
+4. **Object storage** for large-scale video, for example Cloudflare R2, DigitalOcean Spaces or Amazon S3, ideally behind a CDN. This is not built in yet. ReachStudio would upload to the bucket instead of the local disk, with the same storage accounting.
+
+Uploaded videos are served as normal MP4 files with range requests, so learners can seek without downloading the whole file. They are not converted into multiple qualities the way YouTube or Vimeo does.
+
+## Tests
+
+```bash
+npm test
+```
+
+This is an end-to-end test against the mock platform, 16 steps in total. It covers:
+- Dynamic Registration, and rejecting launches from unknown platforms.
+- OIDC launches, account creation and identity linking.
+- Folders and content operations, and uploads (SVG and other file types are rejected).
+- Signed deep-linking responses for RCE embeds and graded assignments.
+- Student launches and grade passback.
+- Course navigation behaviour for teachers and students.
+- Rejecting a tampered `id_token` and a replayed launch.
+- Keeping each user's content private.
+
+## Project layout
+
+```
+src/server.js      Express app
+src/lti.js         LTI 1.3: login, launch, deep linking, AGS, dynamic registration, Canvas JSON config
+src/api.js         Accounts, folders, content, uploads, embed, scores
+src/sessions.js    Bearer-token sessions (no third-party cookies)
+src/db.js          SQLite schema (node:sqlite)
+src/keys.js        Tool RSA key pair (generated on first start into DATA_DIR)
+src/types.js       Server-side scoring/embed sizes per content type
+src/admin.js       Admin API (stats, users, suspend/reactivate/delete)
+src/demo/          Pretend ReachLMS used by demo mode and tests
+public/js/studio.js        Studio app: account, library, type gallery, builder, insert
+public/js/player-page.js   Player shown to learners inside ReachLMS
+public/js/types/*.js       The 29 content types (editor, player, description, example)
+public/js/icons.js         Line icon set
+public/js/covers.js        Cover illustrations for each type
+public/js/brand.js         ReachStudio logo (vectorised ReachLMS hand)
+test/mock-canvas.js        Mock ReachLMS/Canvas platform
+test/e2e-lti.test.js       End-to-end test
+```
+
+## Operations and security notes
+
+- **Back up `DATA_DIR`.** It holds `studio.db` (accounts and content), `tool-keys.json` (the tool's private signing key, file mode 600) and `media/` (uploads). Losing the key means ReachLMS must re-register the tool.
+- **Passwords** are hashed with bcrypt, and sign-in has basic brute-force throttling.
+- **Uploads:** only PNG, JPG, GIF, WebP, MP4, WebM and MP3 are accepted. They are stored under unguessable random names and served with `nosniff`. Anyone with a media link can view it, which is needed so embedded content loads for students.
+- **Author text** is rich text passed through an allow-list sanitiser: only formatting tags, safe colours or alignment, and http(s) or mailto links are kept. Content can't inject scripts into ReachLMS pages.
+- **Suspended accounts** are signed out immediately and can't sign in. Their embedded content keeps working for students. Deleting an account removes its content and uploaded files.
+- **Grading model:** scores are calculated in the learner's browser and capped at the activity's maximum on the server. That's fine for formative activities. For high-stakes assessment, use ReachLMS's native quizzes, or add server-side answer checking.
+- **What is graded where:** content inserted with the RCE button is display-only (Canvas doesn't link RCE embeds to the gradebook). Use *Assignment → External Tool → ReachStudio* for graded activities.
+- **Quizzes:** the RCE button works where ReachLMS's editor shows LTI editor tools (pages, assignments, discussions, Classic Quiz questions). Support inside New Quizzes depends on your ReachLMS version, so check there first.
+- **Video and Interactive Video:** uploads (MP4/WebM, up to `MAX_VIDEO_MB`, default 500 MB) or YouTube/Vimeo links. Linked videos need the learner's network to allow youtube.com or vimeo.com.
+- **Editing after embedding:** embeds reference content by ID, so editing an item updates it everywhere it is embedded. When the owner views an embed in ReachLMS, they see an **✎ Edit in ReachStudio** button.
+- **Scaling:** for multiple server instances, move SQLite and `media/` to shared storage (e.g. Postgres and S3). The in-memory sign-in throttle and token cache are per instance.
