@@ -9,7 +9,7 @@ const TOOL_PORT = 3101;
 const MOCK_PORT = 4101;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'reach-studio-test-'));
 Object.assign(process.env, {
-  DATA_DIR: tmp, PUBLIC_URL: `http://localhost:${TOOL_PORT}`, ALLOW_INSECURE_PLATFORMS: 'true', PORT: String(TOOL_PORT), ADMIN_EMAILS: 'taylor@school.test', STORAGE_QUOTA_MB: '1', CANVAS_API_CLIENT_ID: 'mock-api-key', CANVAS_API_CLIENT_SECRET: 'mock-api-secret',
+  DATA_DIR: tmp, PUBLIC_URL: `http://localhost:${TOOL_PORT}`, ALLOW_INSECURE_PLATFORMS: 'true', PORT: String(TOOL_PORT), ADMIN_EMAILS: 'taylor@school.test', STORAGE_QUOTA_MB: '1', CANVAS_API_CLIENT_ID: '10000000000099', CANVAS_API_CLIENT_SECRET: 'mock-api-secret',
 });
 const { createApp } = await import('../src/server.js');
 const { startMockCanvas } = await import('./mock-canvas.js');
@@ -418,7 +418,7 @@ try {
     assert.equal(cb1.status, 400); assert.match(await cb1.text(), /different person/);
     // The right person connects.
     const ok = await t('POST', '/api/canvas/authorize');
-    assert.match(ok.body.url, /\/login\/oauth2\/auth\?client_id=mock-api-key/);
+    assert.match(ok.body.url, /\/login\/oauth2\/auth\?client_id=10000000000099/);
     assert.ok(new URL(ok.body.url).searchParams.get('scope').split(' ').includes('url:POST|/api/v1/courses/:course_id/assignments'), 'asks only for the scopes it uses');
     const r2 = await fetch(`${ok.body.url}&as=teacher`, { redirect: 'manual' });
     const cb2 = await fetch(r2.headers.get('location'));

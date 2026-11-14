@@ -188,7 +188,7 @@ export async function createMockPlatform({ base, toolUrl, resolve = (u) => u }) 
   state.groups = [{ id: 11, name: 'Assignments', group_weight: 40, position: 1 }, { id: 12, name: 'Quizzes', group_weight: 60, position: 2 }];
   state.sections = [{ id: 21, name: 'Section A' }, { id: 22, name: 'Section B' }];
   state.overrides = [];
-  const API_KEY = { id: 'mock-api-key', secret: 'mock-api-secret' };
+  const API_KEY = { id: '10000000000099', secret: 'mock-api-secret' };
   // Authorize screen: approves straight away as the user viewing the course (?as=… for tests).
   app.get('/login/oauth2/auth', (req, res) => {
     if (req.query.client_id !== API_KEY.id) return res.status(400).send('unknown API key');

@@ -119,6 +119,10 @@ quizzesRouter.get('/api/canvas/status', requireSession, (req, res) => {
 });
 quizzesRouter.post('/api/canvas/authorize', requireSession, (req, res) => {
   if (!apiConfigured()) return res.status(400).json({ error: 'ReachQuizzes isn\'t connected to the ReachLMS API yet. Ask your administrator to add the API key (see the setup guide).' });
+  // ReachLMS API key IDs are numbers (Developer Keys → Details column); anything else is a copy mistake.
+  if (!config.demo && !/^\d+$/.test(config.canvasClientId)) {
+    return res.status(400).json({ error: `The API key ID set on the server (CANVAS_API_CLIENT_ID) isn't a number: it should be the long number from the Details column in ReachLMS Developer Keys, not the key itself. It currently starts with "${config.canvasClientId.slice(0, 4)}…".` });
+  }
   if (!inCourse(req.session.lti) || !req.session.lti.instructor) return res.status(403).json({ error: 'Only teachers connect ReachQuizzes.' });
   res.json({ url: authorizeUrl(req.session) });
 });
