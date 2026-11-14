@@ -1,0 +1,27 @@
+# Render Blueprint: New → Blueprint → pick this repository.
+# Creates the Reach Studio web service with a persistent disk for the database,
+# uploads and the tool's signing key. The public address is detected automatically
+# (RENDER_EXTERNAL_URL); add PUBLIC_URL only if you use a custom domain.
+services:
+  - type: web
+    name: reach-studio
+    runtime: docker
+    plan: starter            # persistent disks need a paid instance
+    healthCheckPath: /health
+    disk:
+      name: reach-studio-data
+      mountPath: /data
+      sizeGB: 1             # uploads live here: raise it if teachers upload video (see README, Media storage)
+    envVars:
+      - key: TRUST_PROXY
+        value: "true"
+      - key: DATA_DIR
+        value: /data
+      - key: CANVAS_API_CLIENT_ID      # ReachQuizzes: ID of the ReachLMS API Developer Key
+        sync: false
+      - key: CANVAS_API_CLIENT_SECRET  # ReachQuizzes: that key's secret
+        sync: false
+      - key: ADMIN_EMAILS        # your email, so you get the Admin view
+        sync: false
+      - key: REGISTRATION_CODE   # admins type this when installing into ReachLMS
+        generateValue: true
