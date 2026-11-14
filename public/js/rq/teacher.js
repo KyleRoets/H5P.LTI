@@ -29,7 +29,8 @@ export function initRq({ app, api, topbar, go, moreMenu, responsesTable, snapsho
       h('div', {},
         h('h3', {}, 'Connect Quizzes+ to ReachLMS'),
         h('p', {}, 'Quizzes+ creates each quiz as an assignment in this course, in the assignment group you choose, with its description, dates and who it\'s assigned to. ReachLMS asks you to allow that once.'),
-        status.configured ? btn : h('p', { class: 'warn' }, icon('alert', { size: 16 }), h('span', {}, 'Your ReachLMS administrator still needs to add the ReachQuizzes API key (see the setup guide). Until then quizzes can\'t be created.'))));
+        status.configured ? btn : h('p', { class: 'warn' }, icon('alert', { size: 16 }), h('span', {}, 'Your ReachLMS administrator still needs to add the ReachQuizzes API key (see the setup guide). Until then quizzes can\'t be created.')),
+        status.configured && h('p', { class: 'rq-connect-diag muted' }, `API key ID ending ${status.keyHint} · signs in at ${status.apiBase || 'unknown address'}`)));
   }
 
   // ---------- quiz list ----------

@@ -211,7 +211,8 @@ quizzesRouter.get('/api/quizzes', requireSession, async (req, res) => {
     });
     return res.json({ course: l.context, label: config.quizNavLabel, quizzes: out });
   }
-  const status = { configured: apiConfigured(), connected: isConnected(l), courseKnown: !!l.canvasCourseId, signedIn: !!req.session.userId };
+  const status = { configured: apiConfigured(), connected: isConnected(l), courseKnown: !!l.canvasCourseId, signedIn: !!req.session.userId,
+    keyHint: config.canvasClientId ? `…${config.canvasClientId.slice(-4)}` : '', apiBase: apiBaseFor(l) || '' };
   let groups = { weighted: false, groups: [] };
   if (status.configured && status.connected && l.canvasCourseId) {
     try {
