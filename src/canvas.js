@@ -58,13 +58,31 @@ export function apiBaseFor(lti) {
 
 export const redirectUri = () => `${config.publicUrl}/lti/canvas/callback`;
 
+/**
+ * The only Canvas API calls ReachQuizzes makes. Requested on every Authorize so the key works with
+ * "Enforce Scopes" on (Canvas refuses an authorisation that names no scopes) and the token can do
+ * nothing else. With Enforce Scopes off, Canvas ignores them.
+ */
+export const API_SCOPES = [
+  'url:GET|/api/v1/courses/:id',
+  'url:GET|/api/v1/courses/:course_id/assignment_groups',
+  'url:GET|/api/v1/courses/:course_id/sections',
+  'url:GET|/api/v1/courses/:course_id/users',
+  'url:GET|/api/v1/courses/:course_id/assignments',
+  'url:POST|/api/v1/courses/:course_id/assignments',
+  'url:PUT|/api/v1/courses/:course_id/assignments/:id',
+  'url:DELETE|/api/v1/courses/:course_id/assignments/:id',
+  'url:POST|/api/v1/courses/:course_id/assignments/:assignment_id/overrides',
+  'url:DELETE|/api/v1/courses/:course_id/assignments/:assignment_id/overrides/:id',
+];
+
 export function authorizeUrl(session) {
   const base = apiBaseFor(session.lti);
   const state = newId(24);
   db.prepare('INSERT INTO canvas_oauth_states (state, session_token, created_at) VALUES (?, ?, ?)').run(state, session.token, Date.now());
   db.prepare('DELETE FROM canvas_oauth_states WHERE created_at < ?').run(Date.now() - 15 * 60 * 1000);
   const u = new URL(`${base}/login/oauth2/auth`);
-  u.search = new URLSearchParams({ client_id: config.canvasClientId, response_type: 'code', redirect_uri: redirectUri(), state }).toString();
+  u.search = new URLSearchParams({ client_id: config.canvasClientId, response_type: 'code', redirect_uri: redirectUri(), state, scope: API_SCOPES.join(' ') }).toString();
   return u.toString();
 }
 

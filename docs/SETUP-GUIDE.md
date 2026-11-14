@@ -240,8 +240,18 @@ ReachQuizzes needs two things in ReachLMS: its own registration, and an API key 
 1. **Admin → Developer Keys → + Developer Key → + API Key.**
 2. Fill in:
    - **Key Name:** `ReachQuizzes`
-   - **Redirect URIs:** `https://YOUR-ADDRESS/lti/canvas/callback`
-   - Leave **Enforce Scopes** off. If your policy needs it on, allow: courses (show), assignment groups (list), sections (list), users (list), assignments (list, show, create, update, delete) and assignment overrides (list, create, delete).
+   - **Redirect URIs** (the main box, not "Redirect URI (Legacy)"): `https://YOUR-ADDRESS/lti/canvas/callback`
+   - **Enforce Scopes:** either way works. With it on, tick exactly these (use **Search endpoints**):
+
+     | Group | Tick |
+     |---|---|
+     | **courses** | `GET /api/v1/courses/:id` and `GET /api/v1/courses/:course_id/users` |
+     | **assignment_groups** | `GET /api/v1/courses/:course_id/assignment_groups` |
+     | **sections** | `GET /api/v1/courses/:course_id/sections` |
+     | **assignments** | `GET /api/v1/courses/:course_id/assignments`, `POST /api/v1/courses/:course_id/assignments`, `PUT /api/v1/courses/:course_id/assignments/:id`, `DELETE /api/v1/courses/:course_id/assignments/:id` |
+     | **assignments** (overrides) | `POST /api/v1/courses/:course_id/assignments/:assignment_id/overrides`, `DELETE /api/v1/courses/:course_id/assignments/:assignment_id/overrides/:id` |
+
+     If one is missing, ReachLMS says so when a teacher clicks Authorize, and names it.
 3. Click **Save**, then switch the key's **State** to **ON**.
 4. In the **Details** column, copy the **ID** (the long number). Click **Show Key** and copy the **key**.
 5. On Render, open your service, then **Environment**, and add:

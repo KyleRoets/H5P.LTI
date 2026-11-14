@@ -419,6 +419,7 @@ try {
     // The right person connects.
     const ok = await t('POST', '/api/canvas/authorize');
     assert.match(ok.body.url, /\/login\/oauth2\/auth\?client_id=mock-api-key/);
+    assert.ok(new URL(ok.body.url).searchParams.get('scope').split(' ').includes('url:POST|/api/v1/courses/:course_id/assignments'), 'asks only for the scopes it uses');
     const r2 = await fetch(`${ok.body.url}&as=teacher`, { redirect: 'manual' });
     const cb2 = await fetch(r2.headers.get('location'));
     assert.equal(cb2.status, 200, await cb2.text());
