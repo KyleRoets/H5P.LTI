@@ -158,7 +158,7 @@ ReachLMS has to reach the tool over the internet on **https**. Netlify can't run
 
 > **Just want to try it on Render first?** Use **New + → Web Service** instead of Blueprint: pick the repository, Runtime **Docker**, the **Free** plan, and add the environment variable `DEMO_MODE` = `true`. Then open `https://YOUR-ADDRESS/demo/` and follow step 1.5. Data is wiped whenever the free service restarts, and it must not be connected to your real ReachLMS. For the real thing, use the Blueprint steps above.
 
-> **Cost:** the Starter instance plus a 1 GB disk is about $7–8 a month. For real use the free plan won't work: it has no disk, so all accounts and content would be lost on every restart.
+> **Cost:** the Starter instance plus a 1 GB disk is about $7–8 a month. The free plan has no disk, so all accounts and content are lost on every restart, unless you turn on the GitHub backup in **2.4**. That's fine for testing; for real use with teachers, use a paid instance with a disk.
 
 ### 2.2 Check the address
 
@@ -179,6 +179,29 @@ Open these in your browser, replacing the address with yours:
 If all three work, the tool is online. **Write the address down**; it's used in the next parts.
 
 > **Using your own domain** (e.g. `studio.reachlms.com`): in Render go to **Settings → Custom Domains**, add the domain, create the DNS record Render shows you, and change **PUBLIC_URL** to the new address. Do this **before** Part 3; changing the address later means reinstalling the tool in ReachLMS.
+
+### 2.4 Testing on the free plan: keep your data in a private GitHub repository
+
+The free plan has no disk. Everything is wiped whenever the service restarts, including after 15 minutes without visitors and after every deploy. That wipe also breaks the LTI apps in ReachLMS. To test without paying, the tool can save its data to a private GitHub repository and bring it back on every start.
+
+1. **Make the repository.** On GitHub click **New repository**. Name it something like `reach-studio-data`, choose **Private**, and tick **Add a README file**. Click **Create repository**.
+2. **Make a token for it.** Go to GitHub **Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token**.
+   - Name: `ReachStudio backup`. Expiration: as long as you'll be testing.
+   - **Repository access:** *Only select repositories* → `reach-studio-data`.
+   - **Permissions → Repository permissions → Contents:** *Read and write*.
+   - Click **Generate token** and copy it (it starts with `github_pat_`).
+3. **Tell Render.** On the service page go to **Environment** and add:
+   - `BACKUP_GITHUB_REPO` = `YourGitHubName/reach-studio-data`
+   - `BACKUP_GITHUB_TOKEN` = the token
+   - `BACKUP_PASSPHRASE` = a long password of your choosing. Backups are encrypted with it. Keep it safe: without it they can't be restored.
+4. Save. Render redeploys once. In **Logs** you should see `[backup] on: saving to … every 30 s, encrypted.`
+5. **Now install into ReachLMS (Part 3), once.** The LTI apps, the API key, accounts and content now survive restarts and deploys.
+
+What it saves: the database, the tool's signing key, and uploads up to 25 MB each. Changes are saved within 30 seconds and again when Render stops the service. Bigger videos aren't backed up, so use YouTube or Vimeo links while testing.
+
+If the backup can't be loaded (wrong token, passphrase or repository name), the tool **doesn't start** and the log says why. This stops it saving an empty database over your backup. Fix the value in Render, or remove the three variables to start without the backup.
+
+> When you move to a paid instance with a disk, you can keep the backup on as an off-site copy or remove the three variables.
 
 ---
 

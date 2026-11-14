@@ -272,6 +272,18 @@ Each question has its own points. Interactive questions can give **partial credi
 2. Time limits with automatic submission, access codes, one question per page with no going back, and results release dates.
 3. Moderate (extra time or attempts per student), per-question statistics and regrading.
 
+## Free hosting: backup to a private GitHub repository
+
+On hosts with no persistent disk (Render's free plan wipes the disk on every restart and deploy), set:
+
+| Variable | Value |
+|---|---|
+| `BACKUP_GITHUB_REPO` | `owner/name` of a private repository (with at least one commit, e.g. a README) |
+| `BACKUP_GITHUB_TOKEN` | fine-grained token, *Contents: read and write* on that repository only |
+| `BACKUP_PASSPHRASE` | optional but recommended: encrypts every file (AES-256-GCM) before upload |
+
+On start, if `DATA_DIR` has no database, `src/boot.js` restores the database, `tool-keys.json`, `token.key` and `media/` from `backup/` in that repository. The database is written last, so a partial restore is retried. If the restore fails, the tool exits rather than starting on an empty database. While it runs, changes are saved every 30 s (`BACKUP_INTERVAL_MS`) and on SIGTERM. Uploads over 25 MB are skipped. See `src/backup.js`.
+
 ## Media storage: where files live
 
 Uploaded images, audio, captions and videos are stored on the **ReachStudio server**, in `DATA_DIR/media`. On Render that is the persistent disk mounted at `/data`.
@@ -326,6 +338,8 @@ This is an end-to-end test against the mock platform, 16 steps in total. It cove
 ## Project layout
 
 ```
+src/boot.js        Start-up: restores the GitHub backup if the disk is fresh, then starts the server
+src/backup.js      Optional backup to a private GitHub repository (free hosting)
 src/server.js      Express app
 src/lti.js         LTI 1.3: login, launch, deep linking, AGS, dynamic registration, Canvas JSON config
 src/api.js         Accounts, folders, content, uploads, embed, scores

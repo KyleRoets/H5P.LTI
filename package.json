@@ -8,7 +8,7 @@
     "node": ">=22.5"
   },
   "scripts": {
-    "start": "node --disable-warning=ExperimentalWarning src/server.js",
+    "start": "node --disable-warning=ExperimentalWarning src/boot.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/server.js",
     "add-platform": "node --disable-warning=ExperimentalWarning scripts/add-platform.js",
     "test": "node --disable-warning=ExperimentalWarning test/e2e-lti.test.js",

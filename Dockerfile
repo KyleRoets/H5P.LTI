@@ -14,4 +14,4 @@ EXPOSE 3000
 HEALTHCHECK CMD wget -qO- http://localhost:3000/health || exit 1
 # Starts as root only long enough to fix /data ownership, then runs the app as "node".
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["node", "--disable-warning=ExperimentalWarning", "src/server.js"]
+CMD ["node", "--disable-warning=ExperimentalWarning", "src/boot.js"]
