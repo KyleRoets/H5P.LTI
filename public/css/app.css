@@ -1092,3 +1092,12 @@ a.rq-item-title:hover { text-decoration: underline; }
 .assign-bottom { display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); flex-wrap: wrap; }
 .assign-actions.confirming, .assign-bottom.confirming { background: var(--amber-soft); border-radius: 10px; padding: 8px 10px; }
 .assign-confirm { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; color: #6b4a0e; font-weight: 600; max-width: 520px; }
+
+/* Quizzes+ teacher page: a plain course page inside ReachLMS (no ReachStudio app chrome) */
+.rqt-body { background: #fff; }
+.rqt-root { max-width: 1100px; margin: 0 auto; }
+.rqt-root > .main { padding: 18px 20px 28px; overflow: visible; }
+.rqt-root .rq-group-block, .rqt-root .rq-qcard, .rqt-root .rq-pane, .rqt-root .rq-assign-card, .rqt-root .rq-tabs { box-shadow: none; }
+.rqt-root .builder-bar { position: sticky; top: 0; z-index: 4; background: #fff; border-bottom: 1px solid var(--line); }
+.rqt-root .rq-top h2 { font-size: 24px; }
+.rq-connect-ico.warnico { background: var(--amber-soft); color: var(--amber); }

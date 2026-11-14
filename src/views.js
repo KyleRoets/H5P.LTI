@@ -14,7 +14,7 @@ const json = (o) => JSON.stringify(o).replace(/</g, '\\u003c').replace(/\u2028/g
 const JS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public', 'js');
 const MODULES = (function list(dir, rel = '') {
   return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? list(path.join(dir, e.name), `${rel}${e.name}/`) : e.name.endsWith('.js') ? [`${rel}${e.name}`] : []));
-}(JS_DIR)).filter((f) => !/^(reset-page|quizzes-page|review-page|player-page|studio)\.js$/.test(f));
+}(JS_DIR)).filter((f) => !/^(reset-page|quizzes-page|quizzes-teacher|review-page|player-page|studio)\.js$/.test(f));
 const preloads = () => MODULES.map((f) => `<link rel="modulepreload" href="/js/v/${config.build}/${f}">`).join('');
 
 // Shown the instant the page arrives (inline styles, no downloads), until the app replaces it.
@@ -90,6 +90,15 @@ export const views = {
       modules: true,
       bodyClass: 'player-body review-body',
       scripts: `<script>window.BOOT=${json({ token, build: config.build })}</script><script type="module" src="/js/v/${config.build}/review-page.js"></script>`,
+    });
+  },
+
+  // ReachQuizzes for teachers: its own page in the course (no ReachStudio app around it).
+  quizzesTeacher(token) {
+    return shell(config.quizToolName, `<main id="rqt" class="rqt-root">${splash(`Opening ${config.quizNavLabel}…`)}</main>`, {
+      bodyClass: 'rqt-body',
+      modules: true,
+      scripts: `<script>window.BOOT=${json({ token, build: config.build, label: config.quizNavLabel })}</script><script type="module" src="/js/v/${config.build}/quizzes-teacher.js"></script>`,
     });
   },
 

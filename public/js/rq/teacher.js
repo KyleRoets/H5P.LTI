@@ -40,6 +40,13 @@ export function initRq({ app, api, topbar, go, moreMenu, responsesTable, snapsho
     const head = h('div', { class: 'rq-top' },
       h('div', {}, h('h2', {}, r.label), h('p', { class: 'help' }, r.course || '')),
       r.connected && h('button', { class: 'btn primary', type: 'button', onclick: () => newQuiz(r) }, icon('plus', { size: 16 }), h('span', {}, 'Quiz')));
+    // Anything that stops quizzes being created gets a clear explanation (never an empty page).
+    const problem = !r.signedIn
+      ? 'Quizzes+ couldn\'t set up your account automatically: a ReachStudio account with your email already exists. Open ReachStudio once from the editor\'s ReachStudio button and sign in to it; Quizzes+ then uses the same account.'
+      : !r.courseKnown
+        ? 'ReachLMS didn\'t send this course\'s ID with the launch. Ask your administrator to reinstall ReachQuizzes (Developer Keys → + Dynamic Registration with /lti/register?app=quizzes); the current version asks for it.'
+        : null;
+    if (problem) { app.replaceChildren(topbar('quizzes'), h('section', { class: 'main rq' }, head, h('div', { class: 'rq-connect' }, h('span', { class: 'rq-connect-ico warnico' }, icon('alert', { size: 26 })), h('div', {}, h('h3', {}, 'Quizzes+ isn\'t ready in this course yet'), h('p', {}, problem))))); return; }
     if (!r.connected) { app.replaceChildren(topbar('quizzes'), h('section', { class: 'main rq' }, head, connectCard(r, renderQuizzes))); return; }
 
     const byGroup = new Map(r.groups.map((g) => [g.id, []]));

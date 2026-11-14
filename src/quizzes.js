@@ -87,7 +87,7 @@ export function quizLaunch(res, { lti, userId, quizId, ags, payload }) {
   if (lti.instructor) {
     lti.kind = 'quizzes';
     const uid = userId || provisionTeacher(lti);
-    return res.send(views.studio(createSession(uid, lti)));
+    return res.send(views.quizzesTeacher(createSession(uid, lti)));
   }
   lti.kind = 'quizlist';
   return res.send(views.quizzes(createSession(userId, lti)));
@@ -207,7 +207,7 @@ quizzesRouter.get('/api/quizzes', requireSession, async (req, res) => {
     });
     return res.json({ course: l.context, label: config.quizNavLabel, quizzes: out });
   }
-  const status = { configured: apiConfigured(), connected: isConnected(l) };
+  const status = { configured: apiConfigured(), connected: isConnected(l), courseKnown: !!l.canvasCourseId, signedIn: !!req.session.userId };
   let groups = { weighted: false, groups: [] };
   if (status.configured && status.connected && l.canvasCourseId) {
     try {
@@ -331,9 +331,16 @@ quizzesRouter.post('/api/quizzes/:id/open', requireTeacher, (req, res) => {
   const l = req.session.lti;
   const q = findQuiz(l, req.params.id);
   if (!q) return res.status(404).json({ error: 'Quiz not found.' });
-  const backUrl = `/studio?t=${encodeURIComponent(req.session.token)}#quizzes`;
+  const backUrl = `/quiz/teach?t=${encodeURIComponent(req.session.token)}`;
   const token = playerSession({ lti: { ...l, kind: undefined, backUrl, preview: true }, userId: req.session.userId, quiz: { ...q, lineitem: null }, asTeacher: false });
   res.json({ url: `/quiz/play?t=${encodeURIComponent(token)}` });
+});
+
+quizzesRouter.get('/quiz/teach', (req, res) => {
+  const row = db.prepare('SELECT * FROM sessions WHERE token = ?').get(String(req.query.t || ''));
+  const l = row?.lti ? JSON.parse(row.lti) : null;
+  if (!l || l.kind !== 'quizzes' || row.expires_at < Date.now()) return res.status(401).send(views.message('Session expired', 'Open Quizzes+ again from the course menu.'));
+  res.send(views.quizzesTeacher(row.token));
 });
 
 quizzesRouter.get('/quiz/list', (req, res) => {
